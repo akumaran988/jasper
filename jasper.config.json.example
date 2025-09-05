@@ -1,0 +1,6 @@
+{
+  "llmProvider": "gemini",
+  "model": "gemini-1.5-flash",
+  "maxIterations": 10,
+  "apiKey": "your-gemini-api-key-here"
+}

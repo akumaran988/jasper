@@ -1,0 +1,93 @@
+import { Tool, ToolCall, ToolResult } from '../types/index.js';
+
+export class ToolRegistry {
+  private tools: Map<string, Tool> = new Map();
+
+  register(tool: Tool): void {
+    this.tools.set(tool.name, tool);
+    console.log(`🔧 Registered tool: ${tool.name}`);
+  }
+
+  unregister(toolName: string): void {
+    this.tools.delete(toolName);
+    console.log(`🗑️  Unregistered tool: ${toolName}`);
+  }
+
+  get(toolName: string): Tool | undefined {
+    return this.tools.get(toolName);
+  }
+
+  getAll(): Tool[] {
+    return Array.from(this.tools.values());
+  }
+
+  async execute(toolCall: ToolCall): Promise<ToolResult> {
+    const tool = this.tools.get(toolCall.name);
+    
+    if (!tool) {
+      return {
+        id: toolCall.id,
+        success: false,
+        result: null,
+        error: `Tool '${toolCall.name}' not found`
+      };
+    }
+
+    try {
+      console.log(`🔧 Executing tool: ${toolCall.name}`, toolCall.parameters);
+      const result = await tool.execute(toolCall.parameters);
+      
+      return {
+        id: toolCall.id,
+        success: true,
+        result
+      };
+    } catch (error) {
+      console.error(`❌ Tool execution failed: ${toolCall.name}`, error);
+      
+      return {
+        id: toolCall.id,
+        success: false,
+        result: null,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  async executeMultiple(toolCalls: ToolCall[]): Promise<ToolResult[]> {
+    const results: ToolResult[] = [];
+    
+    for (const toolCall of toolCalls) {
+      const result = await this.execute(toolCall);
+      results.push(result);
+      
+      // If a tool fails, we might want to continue or stop based on configuration
+      if (!result.success) {
+        console.warn(`⚠️  Tool ${toolCall.name} failed, continuing with remaining tools...`);
+      }
+    }
+    
+    return results;
+  }
+
+  validateToolCall(toolCall: ToolCall): boolean {
+    const tool = this.tools.get(toolCall.name);
+    if (!tool) return false;
+
+    // Basic parameter validation could be added here
+    // For now, we'll just check if the tool exists
+    return true;
+  }
+
+  getToolsForLLM(): Tool[] {
+    return this.getAll().map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      execute: tool.execute // This won't be serialized to the LLM, but kept for local execution
+    }));
+  }
+}
+
+// Singleton instance for global tool registry
+export const globalToolRegistry = new ToolRegistry();

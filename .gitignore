@@ -1,0 +1,40 @@
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build output
+dist/
+build/
+
+# TypeScript
+*.tsbuildinfo
+
+# VS Code
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Coverage
+coverage/
+
+# Misc
+*.swp
+*.swo
+
+# IDE
+.idea/
+
+# Optional: ignore test output
+/test-results/
+
+# Optional: ignore generated markdown
+*.md~

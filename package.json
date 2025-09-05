@@ -1,0 +1,43 @@
+{
+  "name": "jasper",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A Claude Code-like terminal AI assistant with tool calling capabilities",
+  "main": "dist/index.js",
+  "bin": {
+    "jasper": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "ts-node --esm src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "assistant",
+    "terminal",
+    "cli",
+    "tools"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^1.17.0",
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.1",
+    "ink": "^4.4.1",
+    "ink-markdown": "^1.0.4",
+    "marked": "^16.2.1",
+    "react": "^18.2.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/marked": "^5.0.2",
+    "@types/node": "^20.10.5",
+    "@types/react": "^18.2.45",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
