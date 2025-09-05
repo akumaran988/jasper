@@ -27,9 +27,24 @@ export class GeminiProvider implements LLMProvider {
 
       let parsedResponse: any = {};
       try {
+        // First try to parse as direct JSON
         parsedResponse = JSON.parse(text);
       } catch {
-        parsedResponse = { content: text };
+        // If that fails, check for nested JSON in markdown code block
+        if (text.includes('```json') && text.includes('```')) {
+          const jsonMatch = text.match(/```json\s*\n([\s\S]*?)\n```/);
+          if (jsonMatch && jsonMatch[1]) {
+            try {
+              parsedResponse = JSON.parse(jsonMatch[1]);
+            } catch (innerError) {
+              parsedResponse = { content: text };
+            }
+          } else {
+            parsedResponse = { content: text };
+          }
+        } else {
+          parsedResponse = { content: text };
+        }
       }
 
       return {

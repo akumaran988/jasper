@@ -18,6 +18,8 @@ Jasper is now **fully functional** with Google Gemini AI and ready for productio
 - **⏳ Processing Indicators**: "✽ Swirling..." during AI calls
 - **🔄 Smart Looping**: Uses `should_continue` field to control conversation flow
 - **⚙️ Configurable**: API throttling, max iterations, all customizable
+- **🧹 Clean Experience**: No console spam, right-aligned status bar
+- **⌨️ Proper Input**: Shift+Enter for new lines works correctly
 
 ### 🚀 **How to Use:**
 

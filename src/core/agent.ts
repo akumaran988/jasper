@@ -79,7 +79,33 @@ IMPORTANT RULES:
 - Be explicit about what you're doing and why
 - User must approve tools - explain what each tool will do
 - Generate unique IDs for tool calls (timestamp + random)
-- If tools fail, explain and set should_continue appropriately`;
+- If tools fail, explain and set should_continue appropriately
+
+TOOL USAGE EXAMPLES:
+User: "Can you ping google for me?"
+CORRECT Response:
+{
+  "content": "I'll ping Google to check the connection for you.",
+  "tool_calls": [
+    {
+      "id": "call_1234567890_abc123",
+      "name": "bash",
+      "parameters": {"command": "ping -c 4 google.com", "timeout": 10}
+    }
+  ],
+  "should_continue": true,
+  "reasoning": "User requested to ping Google, so I need to execute the bash tool with ping command"
+}
+
+WRONG Response (DON'T DO THIS):
+{
+  "content": "I can help with that. I will use the bash tool to ping google.com.",
+  "tool_calls": [],
+  "should_continue": false,
+  "reasoning": "Just explaining what I would do"
+}
+
+CRITICAL: When user asks you to DO something (ping, list files, run commands, etc.), you MUST include the actual tool_calls in your response. Don't just talk about what you would do - actually do it by calling the appropriate tools!`;
   }
 
   private addSystemMessage(content: string): void {
@@ -118,26 +144,21 @@ IMPORTANT RULES:
         globalToolRegistry.getAll().find(t => t.name)?.name || 'unknown';
       
       if (result.success) {
-        // Format results like Claude Code with proper success indication
-        let formattedResult = '';
-        
-        if (result.result && typeof result.result === 'object') {
-          if (result.result.stdout) {
-            formattedResult = result.result.stdout;
-          } else if (result.result.result) {
-            formattedResult = typeof result.result.result === 'string' ? 
-              result.result.result : 
-              JSON.stringify(result.result.result, null, 2);
-          } else {
-            formattedResult = JSON.stringify(result.result, null, 2);
-          }
-        } else {
-          formattedResult = String(result.result || '');
-        }
-        
-        return `Tool ${result.id} (${toolName}) succeeded:\n${formattedResult}`;
+        // Always format results as JSON for consistent parsing in the renderer
+        const jsonResult = JSON.stringify(result.result, null, 2);
+        return `Tool ${result.id} (${toolName}) succeeded:\n${jsonResult}`;
       } else {
-        return `Tool ${result.id} (${toolName}) failed: ${result.error}`;
+        // For failed results, also format as JSON for consistent parsing
+        const errorResult = {
+          success: false,
+          error: result.error,
+          stderr: result.result?.stderr || '',
+          command: result.result?.command || '',
+          exitCode: result.result?.exitCode || 1,
+          stack: result.result?.stack || ''
+        };
+        const jsonResult = JSON.stringify(errorResult, null, 2);
+        return `Tool ${result.id} (${toolName}) failed:\n${jsonResult}`;
       }
     }).join('\n\n');
 
@@ -156,14 +177,11 @@ IMPORTANT RULES:
       this.context.currentIteration++;
       
       try {
-        console.log(`🤖 Processing iteration ${this.context.currentIteration}/${this.context.maxIterations}`);
-        
         // Apply API throttling
         const now = Date.now();
         const timeSinceLastCall = now - this.lastApiCall;
         if (timeSinceLastCall < this.apiThrottleMs) {
           const waitTime = this.apiThrottleMs - timeSinceLastCall;
-          console.log(`⏳ Throttling API call, waiting ${waitTime}ms...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }
         
@@ -174,13 +192,13 @@ IMPORTANT RULES:
           this.context.tools
         );
 
+        // AI response received
+
         // Add assistant's response to conversation
         this.addAssistantMessage(aiResponse);
 
         // Execute any tool calls with user permission
         if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
-          console.log(`🔧 Found ${aiResponse.tool_calls.length} tool calls, requesting permission...`);
-          
           // Request permission for each tool call
           const approvedToolCalls = [];
           for (const toolCall of aiResponse.tool_calls) {
@@ -193,18 +211,15 @@ IMPORTANT RULES:
           let toolResults: any[] = [];
           
           if (approvedToolCalls.length > 0) {
-            console.log(`🔧 Executing ${approvedToolCalls.length} approved tool calls...`);
             toolResults = await globalToolRegistry.executeMultiple(approvedToolCalls);
             this.addToolResults(toolResults);
             
             // Check if any tools failed critically
             const criticalFailures = toolResults.filter(result => !result.success && this.isCriticalFailure(result));
             if (criticalFailures.length > 0) {
-              console.warn(`⚠️  Critical tool failures detected, ending iteration cycle`);
               break;
             }
           } else {
-            console.log('⚠️ No tool calls approved by user');
             this.addToolResults([{
               id: 'permission_denied',
               success: false,
@@ -216,18 +231,15 @@ IMPORTANT RULES:
 
         // Check if we should continue
         if (!aiResponse.should_continue) {
-          console.log(`✅ AI indicated completion at iteration ${this.context.currentIteration}`);
           break;
         }
 
         // If no tool calls and should continue, something might be wrong
         if (!aiResponse.tool_calls || aiResponse.tool_calls.length === 0) {
-          console.log(`ℹ️  No tool calls but should_continue=true, ending cycle`);
           break;
         }
 
       } catch (error) {
-        console.error(`❌ Error in iteration ${this.context.currentIteration}:`, error);
         
         this.addAssistantMessage({
           content: `I encountered an error: ${error instanceof Error ? error.message : String(error)}`,
@@ -241,7 +253,6 @@ IMPORTANT RULES:
     }
 
     if (this.context.currentIteration >= this.context.maxIterations) {
-      console.warn(`⚠️  Reached maximum iterations (${this.context.maxIterations})`);
       this.addAssistantMessage({
         content: "I've reached the maximum number of iterations for this conversation. The task may be too complex or require user intervention.",
         tool_calls: [],

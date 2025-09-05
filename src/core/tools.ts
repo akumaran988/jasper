@@ -5,12 +5,10 @@ export class ToolRegistry {
 
   register(tool: Tool): void {
     this.tools.set(tool.name, tool);
-    console.log(`🔧 Registered tool: ${tool.name}`);
   }
 
   unregister(toolName: string): void {
     this.tools.delete(toolName);
-    console.log(`🗑️  Unregistered tool: ${toolName}`);
   }
 
   get(toolName: string): Tool | undefined {
@@ -34,7 +32,6 @@ export class ToolRegistry {
     }
 
     try {
-      console.log(`🔧 Executing tool: ${toolCall.name}`, toolCall.parameters);
       const result = await tool.execute(toolCall.parameters);
       
       return {
@@ -43,8 +40,6 @@ export class ToolRegistry {
         result
       };
     } catch (error) {
-      console.error(`❌ Tool execution failed: ${toolCall.name}`, error);
-      
       return {
         id: toolCall.id,
         success: false,
@@ -61,10 +56,7 @@ export class ToolRegistry {
       const result = await this.execute(toolCall);
       results.push(result);
       
-      // If a tool fails, we might want to continue or stop based on configuration
-      if (!result.success) {
-        console.warn(`⚠️  Tool ${toolCall.name} failed, continuing with remaining tools...`);
-      }
+      // If a tool fails, continue with remaining tools
     }
     
     return results;

@@ -95,14 +95,11 @@ const App: React.FC<AppProps> = ({ config }) => {
 
   useEffect(() => {
     try {
-      console.log('🚀 Initializing Jasper...');
-      
       // Register core tools
       registerCoreTools();
       
       // Create LLM provider
       const llmProvider = createLLMProvider(config);
-      console.log(`🧠 Using LLM provider: ${config.llmProvider}`);
       
       // Create conversation agent with permission callback and throttling
       const conversationAgent = new ConversationAgent(
@@ -113,12 +110,9 @@ const App: React.FC<AppProps> = ({ config }) => {
       );
       setAgent(conversationAgent);
       setContext(conversationAgent.getContext());
-      
-      console.log('✅ Jasper initialized successfully');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
-      console.error('❌ Failed to initialize Jasper:', errorMessage);
     }
   }, [config]);
 
@@ -129,13 +123,11 @@ const App: React.FC<AppProps> = ({ config }) => {
     setError(null);
 
     try {
-      console.log(`👤 User: ${message}`);
       const updatedContext = await agent.processMessage(message);
       setContext(updatedContext);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
-      console.error('❌ Error processing message:', errorMessage);
     } finally {
       setIsProcessing(false);
     }

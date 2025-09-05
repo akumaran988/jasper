@@ -42,15 +42,16 @@ const Terminal: React.FC<TerminalProps> = ({
         onPermissionResponse?.(false);
         return;
       }
-      return; // Ignore other input during permission prompt
+      // Ignore all other keys during permission prompt
+      return;
     }
 
     if (key.return) {
-      if (key.shift && !isProcessing) {
+      if (key.shift && !isProcessing && !pendingPermission) {
         // Shift+Enter for new line
         setInput(prev => prev + '\n');
         return;
-      } else if (!isProcessing) {
+      } else if (!isProcessing && !pendingPermission) {
         // Regular Enter to submit
         handleSubmit();
         return;
@@ -58,20 +59,22 @@ const Terminal: React.FC<TerminalProps> = ({
     }
 
     if (key.backspace || key.delete) {
-      setInput(prev => {
-        if (prev.length === 0) return prev;
-        
-        // Handle backspace with newlines
-        if (prev.endsWith('\n')) {
-          return prev.slice(0, -1);
-        } else {
-          return prev.slice(0, -1);
-        }
-      });
+      if (!pendingPermission) {
+        setInput(prev => {
+          if (prev.length === 0) return prev;
+          
+          // Handle backspace with newlines
+          if (prev.endsWith('\n')) {
+            return prev.slice(0, -1);
+          } else {
+            return prev.slice(0, -1);
+          }
+        });
+      }
       return;
     }
 
-    if (!key.ctrl && !key.meta && input.length === 1) {
+    if (!key.ctrl && !key.meta && !pendingPermission && input.length === 1) {
       setInput(prev => prev + input);
     }
   });
@@ -125,8 +128,8 @@ const Terminal: React.FC<TerminalProps> = ({
 
       {/* Messages */}
       <Box flexDirection="column" flexGrow={1}>
-        {context.messages.filter(m => m.role !== 'system').map((message, index) => (
-          <MessageRenderer key={index} message={message} />
+        {context.messages.filter(m => m.role !== 'system' || m.content.startsWith('Tool execution results:')).map((message, index) => (
+          <MessageRenderer key={index} message={message} messages={context.messages} index={context.messages.findIndex(m => m === message)} />
         ))}
       </Box>
 
@@ -157,7 +160,7 @@ const Terminal: React.FC<TerminalProps> = ({
       )}
 
       {/* Processing indicator */}
-      {isProcessing && (
+      {isProcessing && !pendingPermission && (
         <Box marginTop={1}>
           <Text color="yellow">
             ✽ Swirling... (esc to interrupt)
@@ -171,7 +174,7 @@ const Terminal: React.FC<TerminalProps> = ({
       )}
 
       {/* Status bar at bottom */}
-      <Box marginTop={1}>
+      <Box marginTop={1} justifyContent="flex-end">
         <Text color="gray" dimColor>
           {pendingPermission 
             ? '⏵⏵ awaiting permission (Y/N to respond)'

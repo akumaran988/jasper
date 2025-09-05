@@ -33,6 +33,7 @@ export class PermissionManager {
             /^pwd$/,
             /^whoami$/,
             /^date$/,
+            /^ping\s+-c\s+\d+\s+[^|><&;`$(){}[\]*?~]*$/,
             /^cat\s+[^|><&;`$(){}[\]*?~]*$/,
             /^find\s+[^|><&;`$(){}[\]*?~]*$/,
             /^grep\s+[^|><&;`$(){}[\]*?~]*$/,
@@ -192,24 +193,12 @@ export class PermissionManager {
     const permission = await this.checkToolPermission(toolCall);
     
     if (!permission.allowed) {
-      console.log(`❌ Permission denied: ${permission.reason}`);
       return false;
     }
 
     if (permission.requiresConfirmation) {
-      // In a real implementation, this would show a UI prompt
-      console.log(`⚠️  Permission request: ${toolCall.name}(${JSON.stringify(toolCall.parameters)})`);
-      console.log(`   Reason: ${this.getCurrentLevel().description}`);
-      
-      // For demo purposes, auto-approve in developer mode, require manual approval in admin
-      if (this.config.currentLevel === 'developer') {
-        console.log(`✅ Auto-approved for developer mode`);
-        return true;
-      }
-      
-      // In admin mode, would normally require explicit user approval
-      console.log(`⏳ Awaiting admin approval...`);
-      return true; // For demo, approve admin requests too
+      // For demo purposes, auto-approve
+      return true;
     }
 
     return true;
