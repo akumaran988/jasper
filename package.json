@@ -8,7 +8,7 @@
     "jasper": "dist/index.js"
   },
   "scripts": {
-    "dev": "ts-node --esm src/index.ts",
+    "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit"
@@ -38,6 +38,7 @@
     "@types/node": "^20.10.5",
     "@types/react": "^18.2.45",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.5",
     "typescript": "^5.3.3"
   }
 }

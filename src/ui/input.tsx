@@ -66,13 +66,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({ input, isPasted = false, cu
   
   return (
     <Box flexDirection="column" marginTop={1}>
-      {/* Top border */}
-      <Box>
-        <Text color="gray">{borderLine}</Text>
-      </Box>
-      
-      {/* Input content */}
-      <Box flexDirection="column" paddingX={1}>
+      {/* Input box with border */}
+      <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
         {displayContent ? (
           visibleLines.map((line, index) => {
             const actualLineIndex = startLine + index;
@@ -120,19 +115,6 @@ const InputHandler: React.FC<InputHandlerProps> = ({ input, isPasted = false, cu
         )}
       </Box>
       
-      {/* Bottom border */}
-      <Box>
-        <Text color="gray">{borderLine}</Text>
-      </Box>
-      
-      {/* Scroll indicator */}
-      {totalLines > maxVisibleLines && (
-        <Box marginTop={1}>
-          <Text color="gray" dimColor>
-            ↑ {startLine} lines above • {totalLines} lines total
-          </Text>
-        </Box>
-      )}
       
       {/* Input hints */}
       <Box marginTop={1}>
