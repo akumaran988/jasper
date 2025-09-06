@@ -12,6 +12,7 @@ import { ConversationAgent } from './core/agent.js';
 import { GeminiProvider, CustomProvider } from './core/llm.js';
 import { registerCoreTools } from './tools/index.js';
 import { JasperConfig, ConversationContext } from './types/index.js';
+import { initializeLogger, closeLogger, getLogger } from './utils/logger.js';
 
 // Load environment variables
 dotenv.config();
@@ -163,9 +164,32 @@ program
   .option('-e, --endpoint <url>', 'Custom endpoint URL (for custom provider)')
   .option('-i, --max-iterations <number>', 'Maximum iterations per conversation', '10')
   .option('-c, --config <path>', 'Path to config file')
+  .option('-l, --log-file [path]', 'Enable logging to file (optional path)', false)
+  .option('-d, --debug', 'Enable debug logging')
   .action((options) => {
     let config = loadConfig();
+
+    // Set default log file path in logs folder of repo
+    const defaultLogFilePath = path.join(process.cwd(), 'logs', 'jasper.log');
+
+    // Initialize logger
+    const logConfig = {
+      logToFile: options.logFile !== false,
+      logFilePath: typeof options.logFile === 'string'
+        ? options.logFile
+        : defaultLogFilePath,
+      logLevel: options.debug ? 'DEBUG' as const : 'INFO' as const,
+      enableConsole: false // Don't log to console in terminal app
+    };
     
+    // Show log info before starting UI
+    if (logConfig.logToFile) {
+      console.log(`📋 Logging ${logConfig.logLevel} messages to: ${logConfig.logFilePath}`);
+      console.log('');
+    }
+    
+    initializeLogger(logConfig);
+
     // Override config with CLI options
     if (options.provider) config.llmProvider = options.provider;
     if (options.model) config.model = options.model;
@@ -173,19 +197,49 @@ program
     if (options.endpoint) config.customEndpoint = options.endpoint;
     if (options.maxIterations) config.maxIterations = parseInt(options.maxIterations);
 
+    // Log startup info before rendering
+    if (logConfig.logToFile) {
+      const logger = getLogger();
+      logger.info('Jasper starting up', {
+        logFilePath: logConfig.logFilePath,
+        logLevel: logConfig.logLevel,
+        maxIterations: config.maxIterations,
+        provider: config.llmProvider
+      });
+    }
+    
     // Render the app
     render(React.createElement(App, { config }));
+    
+    // Log after render to confirm startup
+    if (logConfig.logToFile) {
+      const logger = getLogger();
+      logger.info('Jasper UI rendered successfully');
+    }
   });
 
 // Handle uncaught errors gracefully
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
+  closeLogger();
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  closeLogger();
   process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  closeLogger();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  closeLogger();
+  process.exit(0);
 });
 
 // Start the program

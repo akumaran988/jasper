@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Text, useInput, useApp } from 'ink';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import { ConversationContext } from '../types/index.js';
 import MessageRenderer from './renderer.js';
 import InputHandler from './input.js';
+import { useAutoScroll } from '../hooks/useAutoScroll.js';
+import { getLogger } from '../utils/logger.js';
 
 interface TerminalProps {
   context: ConversationContext;
@@ -23,6 +25,8 @@ const Terminal: React.FC<TerminalProps> = ({
   onPermissionResponse 
 }) => {
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const logger = useMemo(() => getLogger(), []);
   const [input, setInput] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [displayCursorPosition, setDisplayCursorPosition] = useState(0); // Track cursor in display coordinates
@@ -30,21 +34,142 @@ const Terminal: React.FC<TerminalProps> = ({
   const [pasteBlocks, setPasteBlocks] = useState<Array<{start: number, end: number, content: string}>>([]);
   const [animationFrame, setAnimationFrame] = useState(0);
   const [lastPasteTime, setLastPasteTime] = useState(0);
+  
+  // Auto-scroll functionality
+  const [scrollState, scrollControls] = useAutoScroll(
+    context.messages.length,
+    isProcessing,
+    !!pendingPermission,
+    {
+      enabled: true,
+      scrollToBottomOnUpdate: true,
+      disableOnManualScroll: true,
+      debugLogging: true
+    }
+  );
 
-  // Animation for processing indicator
+  // Track scroll position for manual scroll detection
+  const [userScrollOffset, setUserScrollOffset] = useState(0);
+  const messagesRef = useRef<any>(null);
+  
+  // Add logging for scroll offset changes
   useEffect(() => {
-    if (!isProcessing) return;
-    
-    const interval = setInterval(() => {
-      setAnimationFrame(frame => (frame + 1) % 60); // 60 frame cycle
-    }, 100); // Update every 100ms
-    
-    return () => clearInterval(interval);
-  }, [isProcessing]);
+    logger.warn('📜 USER SCROLL OFFSET CHANGED', {
+      userScrollOffset,
+      isAutoScrollEnabled: scrollState.isAutoScrollEnabled,
+      isProcessing,
+      hasPendingPermission: !!pendingPermission,
+      messageCount: context.messages.length
+    });
+  }, [userScrollOffset, scrollState.isAutoScrollEnabled, isProcessing, pendingPermission, context.messages.length, logger]);
+
+  // Animation for processing indicator - DISABLED to fix mouse scroll issues
+  // The 100ms re-renders were interfering with mouse scroll position
+  // useEffect(() => {
+  //   if (!isProcessing) return;
+  //   const interval = setInterval(() => {
+  //     setAnimationFrame(frame => (frame + 1) % 60);
+  //   }, 100);
+  //   return () => clearInterval(interval);
+  // }, [isProcessing]);
+
+  // DISABLED: Auto-scroll effects for processing - this was causing mouse scroll issues
+  // useEffect(() => {
+  //   if (isProcessing && scrollState.isAutoScrollEnabled) {
+  //     scrollControls.scrollToBottom();
+  //   }
+  // }, [isProcessing, scrollState.isAutoScrollEnabled]);
+
+  // DISABLED: Auto-scroll for permission prompts - this was also causing mouse scroll issues
+  // useEffect(() => {
+  //   if (pendingPermission && scrollState.isAutoScrollEnabled) {
+  //     scrollControls.scrollToBottom();
+  //   }
+  // }, [pendingPermission, scrollState.isAutoScrollEnabled]);
 
   useInput((inputChar: string, key: any) => {
     if (key.ctrl && inputChar === 'c') {
       exit();
+      return;
+    }
+
+    // Handle scroll controls
+    if (key.ctrl && inputChar === 's') {
+      // Ctrl+S to toggle auto-scroll
+      logger.info('User toggling auto-scroll', {
+        currentlyEnabled: scrollState.isAutoScrollEnabled,
+        willBeEnabled: !scrollState.isAutoScrollEnabled,
+        userScrollOffset
+      });
+      scrollControls.toggleAutoScroll();
+      return;
+    }
+
+    if (key.pageUp || key.pageDown) {
+      logger.warn('🔍 PAGE KEY DETECTED!', { 
+        key: key.pageUp ? 'PAGE_UP' : 'PAGE_DOWN',
+        currentOffset: userScrollOffset,
+        isAutoScrollEnabled: scrollState.isAutoScrollEnabled
+      });
+      
+      // Manual scroll detection - disable auto-scroll
+      if (scrollState.isAutoScrollEnabled) {
+        scrollControls.disableAutoScroll();
+        logger.warn('🚫 Auto-scroll disabled due to manual scroll');
+      }
+      
+      const terminalHeight = stdout?.rows || 24;
+      const scrollAmount = Math.max(1, terminalHeight - 3); // Account for input area
+      
+      if (key.pageUp) {
+        const newOffset = Math.max(0, userScrollOffset - scrollAmount);
+        setUserScrollOffset(newOffset);
+        logger.warn('⬆️ Manual scroll up executed', { 
+          previousOffset: userScrollOffset,
+          newOffset,
+          scrollAmount,
+          totalMessages: context.messages.length
+        });
+      } else if (key.pageDown) {
+        const maxMessages = context.messages.length;
+        const newOffset = Math.max(0, userScrollOffset + scrollAmount);
+        setUserScrollOffset(newOffset);
+        logger.warn('⬇️ Manual scroll down executed', { 
+          previousOffset: userScrollOffset,
+          newOffset,
+          scrollAmount,
+          totalMessages: maxMessages
+        });
+        
+        // If scrolled to bottom, re-enable auto-scroll
+        if (newOffset >= maxMessages - scrollAmount) {
+          scrollControls.enableAutoScroll();
+          logger.info('Re-enabled auto-scroll after reaching bottom');
+        }
+      }
+      return;
+    }
+
+    // Home/End keys for quick navigation
+    if (key.ctrl && (inputChar === 'home' || key.home)) {
+      setUserScrollOffset(0);
+      scrollControls.disableAutoScroll();
+      logger.info('User pressed Ctrl+Home - scroll to top', {
+        previousOffset: userScrollOffset,
+        autoScrollPreviouslyEnabled: scrollState.isAutoScrollEnabled
+      });
+      return;
+    }
+    
+    if (key.ctrl && (inputChar === 'end' || key.end)) {
+      // This is the ONLY place where we should reset userScrollOffset to 0
+      setUserScrollOffset(0);
+      scrollControls.enableAutoScroll();
+      scrollControls.scrollToBottom();
+      logger.info('User pressed Ctrl+End - scroll to bottom and reset offset', {
+        previousOffset: userScrollOffset,
+        autoScrollPreviouslyEnabled: scrollState.isAutoScrollEnabled
+      });
       return;
     }
 
@@ -472,10 +597,90 @@ const Terminal: React.FC<TerminalProps> = ({
       )}
 
       {/* Messages */}
-      <Box flexDirection="column" flexGrow={1}>
-        {context.messages.filter(m => m.role !== 'system' || m.content.startsWith('Tool execution results:')).map((message, index) => (
-          <MessageRenderer key={index} message={message} messages={context.messages} index={context.messages.findIndex(m => m === message)} />
-        ))}
+      <Box ref={messagesRef} flexDirection="column" flexGrow={1} justifyContent="flex-end">
+        {(() => {
+          const filteredMessages = context.messages.filter(m => 
+            m.role !== 'system' || m.content.startsWith('Tool execution results:')
+          );
+          
+          // Handle scrolling by limiting visible messages
+          const terminalHeight = stdout?.rows || 24;
+          const availableHeight = terminalHeight - 8; // Account for header, input, status
+          
+          // Reduced logging to prevent spam during render loops
+          if (filteredMessages.length % 5 === 0) { // Only log every 5th message count
+            logger.debug('Height calculation', {
+              terminalHeight,
+              availableHeight,
+              totalMessages: filteredMessages.length
+            });
+          }
+          
+          let visibleMessages = filteredMessages;
+          
+          // If auto-scroll is disabled and user has scrolled, show from offset
+          if (!scrollState.isAutoScrollEnabled && userScrollOffset > 0) {
+            const startIndex = Math.max(0, userScrollOffset);
+            const endIndex = Math.min(filteredMessages.length, startIndex + availableHeight);
+            visibleMessages = filteredMessages.slice(startIndex, endIndex);
+            
+            logger.debug('Showing messages with manual scroll offset', {
+              totalMessages: filteredMessages.length,
+              startIndex,
+              endIndex,
+              userScrollOffset,
+              availableHeight,
+              autoScrollEnabled: scrollState.isAutoScrollEnabled
+            });
+          } else {
+            // Auto-scroll enabled - show latest messages
+            const startIndex = Math.max(0, filteredMessages.length - availableHeight);
+            visibleMessages = filteredMessages.slice(startIndex);
+            
+            // Only log when startIndex actually changes
+            if (startIndex !== 0 || filteredMessages.length % 10 === 0) {
+              logger.debug('Auto-scroll calculation', {
+                totalMessages: filteredMessages.length,
+                startIndex,
+                showingAllMessages: startIndex === 0
+              });
+            }
+            
+            // DON'T reset user scroll offset here - it causes render loops and jumps to top
+            // The userScrollOffset should only be reset by explicit user actions (Ctrl+End)
+            if (userScrollOffset > 0) {
+              logger.debug('Auto-scroll active but user has scroll offset - keeping offset for smooth transition', {
+                userScrollOffset,
+                totalMessages: filteredMessages.length,
+                startIndex,
+                autoScrollEnabled: scrollState.isAutoScrollEnabled
+              });
+            }
+            
+            if (scrollState.isAutoScrollEnabled && filteredMessages.length > 0) {
+              // Reduced logging to prevent spam
+              if (filteredMessages.length % 3 === 0) { // Only log every 3rd message count
+                logger.debug('Auto-scroll showing latest messages', {
+                  totalMessages: filteredMessages.length,
+                  visibleCount: visibleMessages.length,
+                  showingAll: filteredMessages.length <= availableHeight
+                });
+              }
+            }
+          }
+          
+          return visibleMessages.map((message, index) => {
+            const originalIndex = context.messages.findIndex(m => m === message);
+            return (
+              <MessageRenderer 
+                key={`${originalIndex}-${index}`} 
+                message={message} 
+                messages={context.messages} 
+                index={originalIndex} 
+              />
+            );
+          });
+        })()}
       </Box>
 
       {/* Permission prompt */}
@@ -524,15 +729,28 @@ const Terminal: React.FC<TerminalProps> = ({
       )}
 
       {/* Status bar at bottom */}
-      <Box marginTop={1} justifyContent="flex-end">
-        <Text color="gray" dimColor>
-          {pendingPermission 
-            ? '⏵⏵ awaiting permission (Y/N to respond)'
-            : isProcessing 
-            ? `⏵⏵ processing (${context.currentIteration}/${context.maxIterations})` 
-            : '⏵⏵ ready (ctrl+c to exit)'
-          }
-        </Text>
+      <Box marginTop={1} justifyContent="space-between">
+        <Box>
+          <Text color="gray" dimColor>
+            {!scrollState.isAutoScrollEnabled && (
+              <Text color="yellow">📜 Manual scroll </Text>
+            )}
+            {scrollState.isAutoScrollEnabled && scrollState.isAtBottom && (
+              <Text color="green">🔄 Auto-scroll </Text>
+            )}
+            <Text color="blue">Ctrl+S:toggle Ctrl+Home/End:navigate</Text>
+          </Text>
+        </Box>
+        <Box>
+          <Text color="gray" dimColor>
+            {pendingPermission 
+              ? '⏵⏵ awaiting permission (Y/N to respond)'
+              : isProcessing 
+              ? `⏵⏵ processing (${context.currentIteration}/${context.maxIterations})` 
+              : '⏵⏵ ready (ctrl+c to exit)'
+            }
+          </Text>
+        </Box>
       </Box>
     </Box>
   );

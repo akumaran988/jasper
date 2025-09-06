@@ -1,75 +1,59 @@
-# jasper
+# Jasper Project
 
-A Claude Code-like terminal AI assistant with tool calling capabilities
+This is a project developed by AshwinKR. It appears to be a Node.js project based on the presence of `package.json` and `tsconfig.json`.
 
-## Installation
+## Table of Contents
 
-```bash
-npm install
-```
+*   [Project Description](#project-description)
+*   [File Structure](#file-structure)
+*   [Key Files](#key-files)
+*   [Dependencies](#dependencies)
+*   [Usage](#usage)
+*   [Configuration](#configuration)
+*   [Contributing](#contributing)
+*   [License](#license)
 
-## Usage
+## Project Description
 
-```bash
-npm start
-```
+This project, named Jasper, is a Node.js application. The presence of `src` directory suggests it contains the main source code, and `dist` directory likely holds the compiled output.
 
-## Scripts
+## File Structure
 
-```json
-{
-  "dev": "tsx src/index.ts",
-  "build": "tsc",
-  "start": "node dist/index.js",
-  "typecheck": "tsc --noEmit"
-}
-```
+The project has the following main directories:
 
-## Keywords
+*   `.claude`
+*   `.git`
+*   `dist`
+*   `logs`
+*   `node_modules`
+*   `src`
 
-```json
-[
-  "ai",
-  "assistant",
-  "terminal",
-  "cli",
-  "tools"
-]
-```
+## Key Files
+
+*   `.env` and `.env.example`: Environment variable configuration files.
+*   `.gitignore`: Specifies intentionally untracked files that Git should ignore.
+*   `README.md`: This file, containing project information.
+*   `jasper.config.json.example`: An example configuration file for Jasper.
+*   `package.json`: Defines project metadata and dependencies.
+*   `package-lock.json`: Records the exact versions of dependencies installed.
+*   `tsconfig.json`: TypeScript configuration file.
 
 ## Dependencies
 
-```json
-{
-  "@google/genai": "^1.17.0",
-  "chalk": "^4.1.2",
-  "commander": "^11.1.0",
-  "dotenv": "^16.3.1",
-  "ink": "^4.4.1",
-  "ink-markdown": "^1.0.4",
-  "marked": "^16.2.1",
-  "react": "^18.2.0",
-  "zod": "^3.22.4"
-}
-```
+The project utilizes Node.js and TypeScript. The `node_modules` directory contains all installed dependencies. Key dependency information can be found in `package.json`.
 
-## Dev Dependencies
+## Usage
 
-```json
-{
-  "@types/marked": "^5.0.2",
-  "@types/node": "^20.10.5",
-  "@types/react": "^18.2.45",
-  "ts-node": "^10.9.2",
-  "tsx": "^4.20.5",
-  "typescript": "^5.3.3"
-}
-```
+To run or build this project, you would typically use npm or yarn commands defined in `package.json` (e.g., `npm run build`, `npm start`).
 
-## Author
+## Configuration
 
-Your Name
+Environment-specific settings can be managed using the `.env` file. An example configuration is provided in `jasper.config.json.example`.
+
+## Contributing
+
+Contributions are welcome! Please refer to the project's contribution guidelines (if any) or reach out to the maintainer.
 
 ## License
 
-MIT
+[Specify License Here - e.g., MIT License]
