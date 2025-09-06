@@ -10,15 +10,22 @@ interface MessageRendererProps {
 }
 
 const MessageRenderer: React.FC<MessageRendererProps> = ({ message, messages, index }) => {
-  const renderUserMessage = () => (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text color="white">
-          {'>'} {message.content}
-        </Text>
+  const renderUserMessage = () => {
+    // Split user message into lines to preserve multi-line formatting
+    const userLines = message.content.split(/\r\n|\r|\n/);
+    
+    return (
+      <Box flexDirection="column" marginBottom={1}>
+        {userLines.map((line, index) => (
+          <Box key={index}>
+            <Text color="white">
+              {index === 0 ? '> ' : '  '}{line}
+            </Text>
+          </Box>
+        ))}
       </Box>
-    </Box>
-  );
+    );
+  };
 
   const renderAssistantMessage = () => {
     // Parse message content for tool calls and structured responses

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import { Message, ConversationContext } from '../types/index.js';
+import { ConversationContext } from '../types/index.js';
 import MessageRenderer from './renderer.js';
 import InputHandler from './input.js';
 
@@ -24,21 +24,36 @@ const Terminal: React.FC<TerminalProps> = ({
 }) => {
   const { exit } = useApp();
   const [input, setInput] = useState('');
-  const [showInput, setShowInput] = useState(true);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [isPastedContent, setIsPastedContent] = useState(false);
+  const [pasteBlocks, setPasteBlocks] = useState<Array<{start: number, end: number, content: string}>>([]);
+  const [animationFrame, setAnimationFrame] = useState(0);
+  const [lastPasteTime, setLastPasteTime] = useState(0);
 
-  useInput((input: string, key: any) => {
-    if (key.ctrl && input === 'c') {
+  // Animation for processing indicator
+  useEffect(() => {
+    if (!isProcessing) return;
+    
+    const interval = setInterval(() => {
+      setAnimationFrame(frame => (frame + 1) % 60); // 60 frame cycle
+    }, 100); // Update every 100ms
+    
+    return () => clearInterval(interval);
+  }, [isProcessing]);
+
+  useInput((inputChar: string, key: any) => {
+    if (key.ctrl && inputChar === 'c') {
       exit();
       return;
     }
 
     // Handle permission responses
     if (pendingPermission) {
-      if (input === 'y' || input === 'Y') {
+      if (inputChar === 'y' || inputChar === 'Y') {
         onPermissionResponse?.(true);
         return;
       }
-      if (input === 'n' || input === 'N') {
+      if (inputChar === 'n' || inputChar === 'N') {
         onPermissionResponse?.(false);
         return;
       }
@@ -47,45 +62,162 @@ const Terminal: React.FC<TerminalProps> = ({
     }
 
     if (key.return) {
-      if (key.shift && !isProcessing && !pendingPermission) {
-        // Shift+Enter for new line
-        setInput(prev => prev + '\n');
+      
+      if (key.shift && !pendingPermission) {
+        // Shift+Enter for new line (allow even during processing)
+        const currentPos = cursorPosition;
+        setInput(prev => {
+          const newInput = prev.slice(0, currentPos) + '\n' + prev.slice(currentPos);
+          return newInput;
+        });
+        setCursorPosition(currentPos + 1); // Move cursor after the newline
+        
+        // Update paste blocks positions after insertion
+        setPasteBlocks(prev => prev.map(block => ({
+          ...block,
+          start: block.start > currentPos ? block.start + 1 : block.start,
+          end: block.end > currentPos ? block.end + 1 : block.end
+        })));
+        
         return;
-      } else if (!isProcessing && !pendingPermission) {
+      } else if (!isProcessing && !pendingPermission && !key.shift) {
+        // Don't auto-submit if we just pasted content recently
+        const recentPaste = lastPasteTime && (Date.now() - lastPasteTime) < 1000;
+        if (recentPaste) {
+          return;
+        }
+        
         // Regular Enter to submit
         handleSubmit();
         return;
       }
     }
 
+    // Handle cursor movement
+    if (key.leftArrow) {
+      setCursorPosition(prev => Math.max(0, prev - 1));
+      return;
+    }
+    if (key.rightArrow) {
+      setCursorPosition(prev => Math.min(input.length, prev + 1));
+      return;
+    }
+
     if (key.backspace || key.delete) {
-      if (!pendingPermission) {
-        setInput(prev => {
-          if (prev.length === 0) return prev;
+      if (!pendingPermission && cursorPosition > 0) {
+        // Check if cursor is at the end of a paste block
+        const pasteBlockAtCursor = pasteBlocks.find(block => cursorPosition === block.end);
+        
+        if (pasteBlockAtCursor) {
+          // Delete entire paste block
+          setInput(prev => {
+            const newInput = prev.slice(0, pasteBlockAtCursor.start) + prev.slice(pasteBlockAtCursor.end);
+            return newInput;
+          });
+          setCursorPosition(pasteBlockAtCursor.start);
+          setPasteBlocks(prev => prev.filter(block => block !== pasteBlockAtCursor));
+          setIsPastedContent(pasteBlocks.length > 1);
+        } else {
+          // Normal backspace
+          setInput(prev => {
+            const newInput = prev.slice(0, cursorPosition - 1) + prev.slice(cursorPosition);
+            return newInput;
+          });
+          setCursorPosition(prev => Math.max(0, prev - 1));
           
-          // Handle backspace with newlines
-          if (prev.endsWith('\n')) {
-            return prev.slice(0, -1);
-          } else {
-            return prev.slice(0, -1);
-          }
-        });
+          // Update paste blocks positions after deletion
+          setPasteBlocks(prev => prev.map(block => ({
+            ...block,
+            start: block.start > cursorPosition ? block.start - 1 : block.start,
+            end: block.end > cursorPosition ? block.end - 1 : block.end
+          })).filter(block => block.start < block.end));
+          
+          setIsPastedContent(pasteBlocks.length > 0);
+        }
       }
       return;
     }
 
-    if (!key.ctrl && !key.meta && !pendingPermission && input.length === 1) {
-      setInput(prev => prev + input);
+    if (!key.ctrl && !key.meta && !pendingPermission && inputChar.length >= 1) {
+      
+      const currentPos = cursorPosition;
+      
+      // For paste operations, don't add trailing newlines that would trigger auto-submit
+      let processedChar = inputChar;
+      // Only detect actual paste operations - large content or structured data
+      // Don't treat small multi-character inputs (like \\r from Shift+Enter) as paste
+      const isPaste = (inputChar.length > 20) ||  // Large input is definitely paste
+                     (inputChar.length > 5 && inputChar.includes('{') && inputChar.includes('"')) || // JSON
+                     (inputChar.length > 5 && inputChar.includes('[') && inputChar.includes('"')); // Array
+      
+      if (isPaste && (inputChar.endsWith('\n') || inputChar.endsWith('\r'))) {
+        // Remove trailing newlines/carriage returns from paste to prevent auto-submit
+        processedChar = inputChar.replace(/[\n\r]+$/, '');
+      }
+      
+      setInput(prev => {
+        const newInput = prev.slice(0, currentPos) + processedChar + prev.slice(currentPos);
+        return newInput;
+      });
+      setCursorPosition(currentPos + processedChar.length);
+                     
+      // Check if this input should be merged with a recent paste block (even if not detected as paste itself)
+      const shouldMergeWithRecentPaste = () => {
+        if (pasteBlocks.length === 0) return false;
+        const lastBlock = pasteBlocks[pasteBlocks.length - 1];
+        return lastBlock && 
+               lastBlock.end === currentPos &&
+               (Date.now() - lastPasteTime) < 1000; // Within 1 second of last paste
+      };
+
+      if (isPaste || shouldMergeWithRecentPaste()) {
+        // Mark the time of paste to prevent auto-submit from newlines
+        if (isPaste) {
+          setLastPasteTime(Date.now());
+        }
+        
+        // Check if this should be merged with the last paste block
+        setPasteBlocks(prev => {
+          const lastBlock = prev[prev.length - 1];
+          const shouldMerge = lastBlock && 
+                             lastBlock.end === currentPos &&
+                             (Date.now() - lastPasteTime) < 1000; // Within 1 second
+          
+          if (shouldMerge) {
+            // Merge with the last paste block
+            const updatedBlocks = [...prev];
+            const newEnd = currentPos + processedChar.length;
+            updatedBlocks[updatedBlocks.length - 1] = {
+              ...lastBlock,
+              end: newEnd,
+              content: lastBlock.content + inputChar // Use original content
+            };
+            return updatedBlocks;
+          } else {
+            // Create new paste block - use original inputChar for content tracking
+            const newPasteBlock = {
+              start: currentPos,
+              end: currentPos + processedChar.length,
+              content: inputChar // Store original content, not processed
+            };
+            return [...prev, newPasteBlock];
+          }
+        });
+        
+        setIsPastedContent(true);
+      }
     }
   });
 
   const handleSubmit = useCallback(async () => {
-    if (input.trim() && !isProcessing) {
-      const message = input.trim();
+    const messageToSend = input.trim();
+    
+    if (messageToSend && !isProcessing) {
       setInput('');
-      setShowInput(false);
-      await onMessage(message);
-      setShowInput(true);
+      setCursorPosition(0);
+      setIsPastedContent(false);
+      setPasteBlocks([]);
+      await onMessage(messageToSend);
     }
   }, [input, isProcessing, onMessage]);
 
@@ -159,18 +291,23 @@ const Terminal: React.FC<TerminalProps> = ({
         </Box>
       )}
 
-      {/* Processing indicator */}
+      {/* Animated Processing indicator */}
       {isProcessing && !pendingPermission && (
-        <Box marginTop={1}>
-          <Text color="yellow">
-            ✽ Swirling... (esc to interrupt)
-          </Text>
-        </Box>
+        <AnimatedProcessingIndicator 
+          frame={animationFrame} 
+          iteration={context.currentIteration}
+        />
       )}
 
-      {/* Input */}
-      {showInput && !isProcessing && !pendingPermission && (
-        <InputHandler input={input} onInputChange={setInput} />
+      {/* Input - always show unless there's a permission prompt */}
+      {!pendingPermission && (
+        <InputHandler 
+          input={input} 
+          onInputChange={setInput} 
+          isPasted={isPastedContent} 
+          cursorPosition={cursorPosition}
+          pasteBlocks={pasteBlocks}
+        />
       )}
 
       {/* Status bar at bottom */}
@@ -184,6 +321,44 @@ const Terminal: React.FC<TerminalProps> = ({
           }
         </Text>
       </Box>
+    </Box>
+  );
+};
+
+const AnimatedProcessingIndicator: React.FC<{
+  frame: number;
+  iteration: number;
+}> = ({ frame, iteration }) => {
+  const quirkyWords = [
+    'Pondering', 'Brewing', 'Conjuring', 'Weaving', 'Crafting', 
+    'Summoning', 'Manifesting', 'Orchestrating', 'Channeling', 'Synthesizing',
+    'Harmonizing', 'Crystallizing', 'Architecting', 'Blueprinting', 'Materializing'
+  ];
+  
+  const colors = ['cyan', 'magenta', 'yellow', 'green', 'blue', 'red'];
+  
+  // Choose word based on iteration to add variety
+  const currentWord = quirkyWords[iteration % quirkyWords.length];
+  
+  // Create square spinner effect
+  const spinnerChars = ['◐', '◓', '◑', '◒'];
+  const currentSpinner = spinnerChars[Math.floor(frame / 8) % spinnerChars.length];
+  
+  const renderSpinner = () => {
+    return currentSpinner;
+  };
+  
+  // Cycle through colors
+  const currentColor = colors[Math.floor(frame / 10) % colors.length];
+  
+  return (
+    <Box marginTop={1}>
+      <Text color={currentColor as any}>
+        {renderSpinner()} {currentWord}...
+      </Text>
+      <Text color="gray" dimColor>
+        {' '}(esc to interrupt)
+      </Text>
     </Box>
   );
 };
