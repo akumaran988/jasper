@@ -59,10 +59,38 @@ const InputHandler: React.FC<InputHandlerProps> = ({ input, isPasted = false, cu
     });
   };
   
-  // Calculate which lines to show (scroll to bottom) 
+  // Calculate which lines to show with smart scrolling based on cursor position
   const displayTotalLines = displayLines.length;
-  const startLine = Math.max(0, displayTotalLines - maxVisibleLines);
-  const visibleLines = displayLines.slice(startLine);
+  
+  // We now receive the cursor position directly in display coordinates
+  const displayCursorPos = cursorPosition;
+  let cursorLine = 0;
+  let charCount = 0;
+  
+  for (let i = 0; i < displayLines.length; i++) {
+    const lineEndPos = charCount + displayLines[i].length;
+    if (displayCursorPos <= lineEndPos) {
+      cursorLine = i;
+      break;
+    }
+    charCount += displayLines[i].length + 1; // +1 for newline
+  }
+  
+  // Calculate visible lines with cursor-based scrolling
+  let startLine: number;
+  if (displayTotalLines <= maxVisibleLines) {
+    // Show all lines if we have fewer than max
+    startLine = 0;
+  } else if (cursorLine < maxVisibleLines - 1) {
+    // Show from beginning if cursor is near the top
+    startLine = 0;
+  } else {
+    // Center cursor in visible area or show from cursor - (maxVisible - 1)
+    startLine = Math.min(cursorLine - Math.floor(maxVisibleLines / 2), displayTotalLines - maxVisibleLines);
+    startLine = Math.max(0, startLine);
+  }
+  
+  const visibleLines = displayLines.slice(startLine, startLine + maxVisibleLines);
   
   return (
     <Box flexDirection="column" marginTop={1}>
@@ -74,15 +102,15 @@ const InputHandler: React.FC<InputHandlerProps> = ({ input, isPasted = false, cu
             const isFirstLine = actualLineIndex === 0;
             const isLastLine = index === visibleLines.length - 1;
             
-            // Calculate cursor position for this line
+            // Calculate cursor position for this line in display coordinates
             let lineStart = 0;
             for (let i = 0; i < actualLineIndex; i++) {
-              lineStart += displayLines[i].length + 1;
+              lineStart += displayLines[i].length + 1; // +1 for newline character
             }
             const lineEnd = lineStart + line.length;
             
-            const showCursorOnThisLine = cursorPosition >= lineStart && cursorPosition <= lineEnd;
-            const cursorPosInLine = showCursorOnThisLine ? Math.max(0, cursorPosition - lineStart) : -1;
+            const showCursorOnThisLine = displayCursorPos >= lineStart && displayCursorPos <= lineEnd;
+            const cursorPosInLine = showCursorOnThisLine ? displayCursorPos - lineStart : -1;
             
             return (
               <Box key={actualLineIndex} flexDirection="row" minHeight={1}>
@@ -99,7 +127,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({ input, isPasted = false, cu
                   ) : (
                     renderTextWithPasteIndicators(line || ' ')
                   )}
-                  {isLastLine && !showCursorOnThisLine && cursorPosition >= displayContent.length && (
+                  {isLastLine && !showCursorOnThisLine && displayCursorPos >= displayContent.length && (
                     <Text backgroundColor="white" color="black"> </Text>
                   )}
                 </Text>
@@ -115,6 +143,16 @@ const InputHandler: React.FC<InputHandlerProps> = ({ input, isPasted = false, cu
         )}
       </Box>
       
+      {/* Scroll indicator - only show if there are hidden lines */}
+      {displayTotalLines > maxVisibleLines && (
+        <Box marginTop={1}>
+          <Text color="gray" dimColor>
+            {startLine > 0 ? `↑ ${startLine} lines above` : ''} 
+            {startLine > 0 && (startLine + maxVisibleLines < displayTotalLines) ? ' • ' : ''}
+            {startLine + maxVisibleLines < displayTotalLines ? `${displayTotalLines - startLine - maxVisibleLines} lines below ↓` : ''}
+          </Text>
+        </Box>
+      )}
       
       {/* Input hints */}
       <Box marginTop={1}>

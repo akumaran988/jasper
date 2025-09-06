@@ -25,6 +25,7 @@ const Terminal: React.FC<TerminalProps> = ({
   const { exit } = useApp();
   const [input, setInput] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
+  const [displayCursorPosition, setDisplayCursorPosition] = useState(0); // Track cursor in display coordinates
   const [isPastedContent, setIsPastedContent] = useState(false);
   const [pasteBlocks, setPasteBlocks] = useState<Array<{start: number, end: number, content: string}>>([]);
   const [animationFrame, setAnimationFrame] = useState(0);
@@ -93,14 +94,212 @@ const Terminal: React.FC<TerminalProps> = ({
       }
     }
 
-    // Handle cursor movement
-    if (key.leftArrow) {
-      setCursorPosition(prev => Math.max(0, prev - 1));
-      return;
-    }
-    if (key.rightArrow) {
-      setCursorPosition(prev => Math.min(input.length, prev + 1));
-      return;
+    // Handle cursor movement - work directly with display coordinates
+    if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow) {
+      // Create display content
+      const createDisplayContent = () => {
+        if (pasteBlocks.length === 0) {
+          return input;
+        }
+        
+        let displayContent = input;
+        const sortedBlocks = [...pasteBlocks].sort((a, b) => b.start - a.start);
+        
+        sortedBlocks.forEach((block) => {
+          const blockLines = block.content.split(/\r\n|\r|\n/);
+          const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+          const before = displayContent.slice(0, block.start);
+          const after = displayContent.slice(block.end);
+          displayContent = before + indicator + after;
+        });
+        
+        return displayContent;
+      };
+      
+      const displayContent = createDisplayContent();
+      const displayLines = displayContent.split(/\r\n|\r|\n/);
+      
+      if (key.leftArrow) {
+        // Check if we're at the end of a paste block indicator
+        const sortedBlocks = [...pasteBlocks].sort((a, b) => a.start - b.start);
+        let currentDisplayPos = 0;
+        let foundJumpTarget = false;
+        
+        for (const block of sortedBlocks) {
+          // Calculate display positions for this block
+          const blockLines = block.content.split(/\r\n|\r|\n/);
+          const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+          
+          // Add characters before this block
+          const charsBeforeBlock = block.start - currentDisplayPos;
+          currentDisplayPos += charsBeforeBlock;
+          
+          const blockStartDisplayPos = currentDisplayPos;
+          const blockEndDisplayPos = currentDisplayPos + indicator.length;
+          
+          // If we're at the end of this paste indicator, jump to start of actual content
+          if (displayCursorPosition === blockEndDisplayPos) {
+            setCursorPosition(block.start);
+            setDisplayCursorPosition(blockStartDisplayPos);
+            foundJumpTarget = true;
+            break;
+          }
+          
+          currentDisplayPos = blockEndDisplayPos;
+        }
+        
+        if (!foundJumpTarget) {
+          const newDisplayPos = Math.max(0, displayCursorPosition - 1);
+          setDisplayCursorPosition(newDisplayPos);
+          
+          // Convert back to raw position for operations that need it
+          let rawPos = newDisplayPos;
+          let currentDispPos = 0;
+          
+          for (const block of sortedBlocks) {
+            const blockLines = block.content.split(/\r\n|\r|\n/);
+            const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+            
+            if (newDisplayPos >= currentDispPos && newDisplayPos < currentDispPos + indicator.length) {
+              // Position is within a paste block indicator
+              rawPos = block.start;
+              break;
+            } else if (newDisplayPos >= currentDispPos + indicator.length) {
+              // Adjust for this paste block
+              const adjustment = (block.end - block.start) - indicator.length;
+              rawPos += adjustment;
+              currentDispPos += indicator.length;
+            } else {
+              break;
+            }
+          }
+          
+          setCursorPosition(Math.max(0, rawPos));
+        }
+        return;
+      }
+      
+      if (key.rightArrow) {
+        // Check if we're at the start of a paste block indicator
+        const sortedBlocks = [...pasteBlocks].sort((a, b) => a.start - b.start);
+        let currentDisplayPos = 0;
+        let foundJumpTarget = false;
+        
+        for (const block of sortedBlocks) {
+          // Calculate display positions for this block
+          const blockLines = block.content.split(/\r\n|\r|\n/);
+          const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+          
+          // Add characters before this block
+          const charsBeforeBlock = block.start - currentDisplayPos;
+          currentDisplayPos += charsBeforeBlock;
+          
+          const blockStartDisplayPos = currentDisplayPos;
+          const blockEndDisplayPos = currentDisplayPos + indicator.length;
+          
+          // If we're at the start of this paste indicator, jump to end of actual content
+          if (displayCursorPosition === blockStartDisplayPos) {
+            setCursorPosition(block.end);
+            setDisplayCursorPosition(blockEndDisplayPos);
+            foundJumpTarget = true;
+            break;
+          }
+          
+          currentDisplayPos = blockEndDisplayPos;
+        }
+        
+        if (!foundJumpTarget) {
+          const newDisplayPos = Math.min(displayContent.length, displayCursorPosition + 1);
+          setDisplayCursorPosition(newDisplayPos);
+          
+          // Convert back to raw position for operations that need it
+          let rawPos = newDisplayPos;
+          let currentDispPos = 0;
+          
+          for (const block of sortedBlocks) {
+            const blockLines = block.content.split(/\r\n|\r|\n/);
+            const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+            
+            if (newDisplayPos >= currentDispPos && newDisplayPos < currentDispPos + indicator.length) {
+              // Position is within a paste block indicator
+              rawPos = block.start;
+              break;
+            } else if (newDisplayPos >= currentDispPos + indicator.length) {
+              // Adjust for this paste block
+              const adjustment = (block.end - block.start) - indicator.length;
+              rawPos += adjustment;
+              currentDispPos += indicator.length;
+            } else {
+              break;
+            }
+          }
+          
+          setCursorPosition(Math.min(input.length, rawPos));
+        }
+        return;
+      }
+      
+      if (key.upArrow) {
+        // Find current line and column in display content
+        let charCount = 0;
+        let currentLine = 0;
+        let currentColumn = 0;
+        
+        for (let i = 0; i < displayLines.length; i++) {
+          const lineEndPos = charCount + displayLines[i].length;
+          if (displayCursorPosition <= lineEndPos) {
+            currentLine = i;
+            currentColumn = displayCursorPosition - charCount;
+            break;
+          }
+          charCount += displayLines[i].length + 1; // +1 for newline
+        }
+        
+        if (currentLine > 0) {
+          const targetLine = currentLine - 1;
+          const targetColumn = Math.min(currentColumn, displayLines[targetLine].length);
+          let newDisplayPos = 0;
+          
+          for (let i = 0; i < targetLine; i++) {
+            newDisplayPos += displayLines[i].length + 1;
+          }
+          newDisplayPos += targetColumn;
+          
+          setDisplayCursorPosition(newDisplayPos);
+        }
+        return;
+      }
+      
+      if (key.downArrow) {
+        // Find current line and column in display content
+        let charCount = 0;
+        let currentLine = 0;
+        let currentColumn = 0;
+        
+        for (let i = 0; i < displayLines.length; i++) {
+          const lineEndPos = charCount + displayLines[i].length;
+          if (displayCursorPosition <= lineEndPos) {
+            currentLine = i;
+            currentColumn = displayCursorPosition - charCount;
+            break;
+          }
+          charCount += displayLines[i].length + 1; // +1 for newline
+        }
+        
+        if (currentLine < displayLines.length - 1) {
+          const targetLine = currentLine + 1;
+          const targetColumn = Math.min(currentColumn, displayLines[targetLine].length);
+          let newDisplayPos = 0;
+          
+          for (let i = 0; i < targetLine; i++) {
+            newDisplayPos += displayLines[i].length + 1;
+          }
+          newDisplayPos += targetColumn;
+          
+          setDisplayCursorPosition(newDisplayPos);
+        }
+        return;
+      }
     }
 
     if (key.backspace || key.delete) {
@@ -160,6 +359,20 @@ const Terminal: React.FC<TerminalProps> = ({
         return newInput;
       });
       setCursorPosition(currentPos + processedChar.length);
+      
+      // Update display cursor position to match
+      const newDisplayPos = currentPos + processedChar.length;
+      // Adjust for any paste blocks that come before this position
+      let adjustment = 0;
+      const sortedBlocks = [...pasteBlocks].sort((a, b) => a.start - b.start);
+      for (const block of sortedBlocks) {
+        if (newDisplayPos > block.start) {
+          const blockLines = block.content.split(/\r\n|\r|\n/);
+          const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+          adjustment += indicator.length - (block.end - block.start);
+        }
+      }
+      setDisplayCursorPosition(newDisplayPos + adjustment);
                      
       // Check if this input should be merged with a recent paste block (even if not detected as paste itself)
       const shouldMergeWithRecentPaste = () => {
@@ -305,7 +518,7 @@ const Terminal: React.FC<TerminalProps> = ({
           input={input} 
           onInputChange={setInput} 
           isPasted={isPastedContent} 
-          cursorPosition={cursorPosition}
+          cursorPosition={displayCursorPosition}
           pasteBlocks={pasteBlocks}
         />
       )}
