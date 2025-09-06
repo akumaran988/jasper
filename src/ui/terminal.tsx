@@ -58,23 +58,48 @@ const Terminal: React.FC<TerminalProps> = ({
   // Track which tool result is currently focused/selected
   const [focusedToolResult, setFocusedToolResult] = useState<string | null>(null);
   
-  // Auto-focus the most recent tool result when new ones appear
-  useEffect(() => {
-    const systemMessages = context.messages.filter(m => 
-      m.role === 'system' && m.content.startsWith('Tool execution results:')
-    );
+  // Track pagination for tool results (when more than 9)
+  const [toolResultPage, setToolResultPage] = useState(0); // 0 = results 1-9, 1 = results 10-18, etc.
+  
+  // Helper function to get all tool result keys
+  const getAllToolResultKeys = useCallback(() => {
+    const toolResultKeys: string[] = [];
+    logger.debug('Checking messages for tool results:', context.messages.map((msg, idx) => ({
+      index: idx,
+      role: msg.role,
+      contentStart: msg.content.substring(0, 50),
+      isToolResult: msg.role === 'system' && msg.content.startsWith('Tool execution results:')
+    })));
     
-    if (systemMessages.length > 0) {
-      const lastSystemIndex = context.messages.findIndex(m => m === systemMessages[systemMessages.length - 1]);
-      const mostRecentKey = `${lastSystemIndex}-0`;
-      
-      // Only auto-focus if no tool result is currently focused, or if this is a new one
-      if (!focusedToolResult || !focusedToolResult.startsWith(lastSystemIndex.toString())) {
-        setFocusedToolResult(mostRecentKey);
-        logger.debug('Auto-focused most recent tool result:', mostRecentKey);
+    context.messages.forEach((msg, msgIndex) => {
+      if (msg.role === 'system' && msg.content.startsWith('Tool execution results:')) {
+        const results = msg.content.replace('Tool execution results:\n', '').split('\n\n');
+        results.forEach((_, resultIndex) => {
+          toolResultKeys.push(`${msgIndex}-${resultIndex}`);
+        });
       }
-    }
-  }, [context.messages.length, focusedToolResult, logger]);
+    });
+    logger.debug('Found tool result keys:', toolResultKeys);
+    return toolResultKeys;
+  }, [context.messages, logger]);
+  
+  // DISABLED: Auto-focus was interfering with manual selection
+  // useEffect(() => {
+  //   const systemMessages = context.messages.filter(m => 
+  //     m.role === 'system' && m.content.startsWith('Tool execution results:')
+  //   );
+  //   
+  //   if (systemMessages.length > 0) {
+  //     const lastSystemIndex = context.messages.findIndex(m => m === systemMessages[systemMessages.length - 1]);
+  //     const mostRecentKey = `${lastSystemIndex}-0`;
+  //     
+  //     // Only auto-focus if no tool result is currently focused, or if this is a new one
+  //     if (!focusedToolResult || !focusedToolResult.startsWith(lastSystemIndex.toString())) {
+  //       setFocusedToolResult(mostRecentKey);
+  //       logger.debug('Auto-focused most recent tool result:', mostRecentKey);
+  //     }
+  //   }
+  // }, [context.messages.length, focusedToolResult, logger]);
   
   // Add logging for scroll offset changes
   useEffect(() => {
@@ -129,19 +154,7 @@ const Terminal: React.FC<TerminalProps> = ({
       return;
     }
 
-    // Helper function to get all tool result keys
-    const getAllToolResultKeys = () => {
-      const toolResultKeys: string[] = [];
-      context.messages.forEach((msg, msgIndex) => {
-        if (msg.role === 'system' && msg.content.startsWith('Tool execution results:')) {
-          const results = msg.content.replace('Tool execution results:\n', '').split('\n\n');
-          results.forEach((_, resultIndex) => {
-            toolResultKeys.push(`${msgIndex}-${resultIndex}`);
-          });
-        }
-      });
-      return toolResultKeys;
-    };
+    // Remove Tab navigation - it's too complex for terminal UI
 
     // Handle Up/Down arrow navigation for tool results (when not typing)
     if ((key.upArrow || key.downArrow) && !pendingPermission) {
@@ -159,6 +172,10 @@ const Terminal: React.FC<TerminalProps> = ({
         
         const newFocused = toolResultKeys[nextIndex];
         setFocusedToolResult(newFocused);
+        
+        // Disable auto-scroll during navigation to keep focused item visible
+        scrollControls.disableAutoScroll();
+        
         logger.info('Navigated to tool result:', newFocused);
       }
       return;
@@ -179,31 +196,28 @@ const Terminal: React.FC<TerminalProps> = ({
     // Handle number keys (1-9) to quickly focus tool results
     if (!pendingPermission && !key.ctrl && !key.meta && inputChar >= '1' && inputChar <= '9') {
       const toolResultKeys = getAllToolResultKeys();
-      const index = parseInt(inputChar) - 1;
+      const keyNumber = parseInt(inputChar);
+      const arrayIndex = keyNumber - 1; // Convert 1-based to 0-based array index
       
-      if (index < toolResultKeys.length) {
-        const targetKey = toolResultKeys[index];
+      if (arrayIndex < toolResultKeys.length) {
+        const targetKey = toolResultKeys[arrayIndex];
         setFocusedToolResult(targetKey);
-        logger.info('Quick-focused tool result:', targetKey, `(${inputChar})`);
+        logger.info('Quick-focused tool result:', targetKey, `(key ${inputChar} -> array index ${arrayIndex}, total keys: ${toolResultKeys.length}, keys: ${JSON.stringify(toolResultKeys)})`);
+      } else {
+        logger.warn('Key selection failed:', `key ${inputChar} -> array index ${arrayIndex}, but only ${toolResultKeys.length} results available: ${JSON.stringify(toolResultKeys)}`);
       }
       return;
     }
 
     // Handle tool result expansion (Ctrl+E)
     if (key.ctrl && inputChar === 'e') {
-      // Use focused tool result if available, otherwise use the most recent one
+      const toolResultKeys = getAllToolResultKeys();
       let targetResultKey = focusedToolResult;
       
-      if (!targetResultKey) {
-        // Find the most recent tool result
-        const systemMessages = context.messages.filter(m => 
-          m.role === 'system' && m.content.startsWith('Tool execution results:')
-        );
-        
-        if (systemMessages.length > 0) {
-          const lastSystemIndex = context.messages.findIndex(m => m === systemMessages[systemMessages.length - 1]);
-          targetResultKey = `${lastSystemIndex}-0`; // First result in the last system message
-        }
+      if (!targetResultKey && toolResultKeys.length > 0) {
+        // Use the most recent (last) tool result if no specific focus
+        targetResultKey = toolResultKeys[toolResultKeys.length - 1];
+        logger.info('No focused result, using most recent:', targetResultKey);
       }
       
       if (targetResultKey) {
@@ -223,6 +237,24 @@ const Terminal: React.FC<TerminalProps> = ({
     }
 
     if (key.pageUp || key.pageDown) {
+      // Check if we should handle tool result pagination instead of scrolling
+      const toolResultKeys = getAllToolResultKeys();
+      const totalPages = Math.ceil(toolResultKeys.length / 9);
+      
+      if (toolResultKeys.length > 9) {
+        // Handle tool result pagination
+        if (key.pageUp && toolResultPage > 0) {
+          setToolResultPage(toolResultPage - 1);
+          logger.info(`Tool result page up: ${toolResultPage - 1} (showing results ${(toolResultPage - 1) * 9 + 1}-${Math.min(toolResultKeys.length, toolResultPage * 9)})`);
+          return;
+        } else if (key.pageDown && toolResultPage < totalPages - 1) {
+          setToolResultPage(toolResultPage + 1);
+          logger.info(`Tool result page down: ${toolResultPage + 1} (showing results ${toolResultPage * 9 + 10}-${Math.min(toolResultKeys.length, (toolResultPage + 1) * 9 + 9)})`);
+          return;
+        }
+      }
+      
+      // Fall back to regular scrolling if not paginating tool results
       logger.warn('🔍 PAGE KEY DETECTED!', { 
         key: key.pageUp ? 'PAGE_UP' : 'PAGE_DOWN',
         currentOffset: userScrollOffset,
@@ -269,12 +301,20 @@ const Terminal: React.FC<TerminalProps> = ({
 
     // Home/End keys for quick navigation
     if (key.ctrl && (inputChar === 'home' || key.home)) {
-      setUserScrollOffset(0);
-      scrollControls.disableAutoScroll();
-      logger.info('User pressed Ctrl+Home - scroll to top', {
-        previousOffset: userScrollOffset,
-        autoScrollPreviouslyEnabled: scrollState.isAutoScrollEnabled
-      });
+      const toolResultKeys = getAllToolResultKeys();
+      if (toolResultKeys.length > 9) {
+        // Reset tool result pagination to first page
+        setToolResultPage(0);
+        logger.info('Reset tool result page to 0 (showing results 1-9)');
+      } else {
+        // Regular scroll to top
+        setUserScrollOffset(0);
+        scrollControls.disableAutoScroll();
+        logger.info('User pressed Ctrl+Home - scroll to top', {
+          previousOffset: userScrollOffset,
+          autoScrollPreviouslyEnabled: scrollState.isAutoScrollEnabled
+        });
+      }
       return;
     }
     
@@ -796,6 +836,7 @@ const Terminal: React.FC<TerminalProps> = ({
                 index={originalIndex}
                 expandedToolResults={expandedToolResults}
                 focusedToolResult={focusedToolResult}
+                toolResultPage={toolResultPage}
                 onToggleExpansion={(resultKey: string) => {
                   setExpandedToolResults(prev => {
                     const newSet = new Set(prev);
@@ -877,7 +918,22 @@ const Terminal: React.FC<TerminalProps> = ({
             {focusedToolResult && (
               <Text color="cyan">🎯 Focused: {focusedToolResult} </Text>
             )}
-            <Text color="blue">1-9:select ↑↓:navigate Ctrl+↑↓:jump Ctrl+E:expand</Text>
+            {(() => {
+              const toolResultKeys = getAllToolResultKeys();
+              const totalPages = Math.ceil(toolResultKeys.length / 9);
+              
+              if (toolResultKeys.length > 9) {
+                const pageStart = toolResultPage * 9 + 1;
+                const pageEnd = Math.min(toolResultKeys.length, (toolResultPage + 1) * 9);
+                return (
+                  <Text color="blue">
+                    1-9:select Ctrl+E:expand Page{toolResultPage + 1}/{totalPages} ({pageStart}-{pageEnd} of {toolResultKeys.length}) PgUp/PgDn:navigate Home:reset
+                  </Text>
+                );
+              } else {
+                return <Text color="blue">1-9:select Ctrl+E:expand</Text>;
+              }
+            })()}
           </Text>
         </Box>
         <Box>

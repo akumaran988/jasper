@@ -11,6 +11,7 @@ interface MessageRendererProps {
   focusedToolResult?: string | null;
   onToggleExpansion?: (resultKey: string) => void;
   onFocusToolResult?: (resultKey: string) => void;
+  toolResultPage?: number;
 }
 
 const MessageRenderer: React.FC<MessageRendererProps> = ({ 
@@ -20,7 +21,8 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
   expandedToolResults, 
   focusedToolResult,
   onToggleExpansion,
-  onFocusToolResult
+  onFocusToolResult,
+  toolResultPage = 0
 }) => {
   const renderUserMessage = () => {
     // Split user message into lines to preserve multi-line formatting
@@ -204,11 +206,32 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
               }
             }
             
+            // Use the SAME logic as getAllToolResultKeys to ensure sync
+            let displayNumber = 0;
+            const allKeys: string[] = [];
+            
+            // Build the same array as getAllToolResultKeys
+            messages.forEach((msg, msgIndex) => {
+              if (msg.role === 'system' && msg.content.startsWith('Tool execution results:')) {
+                const results = msg.content.replace('Tool execution results:\n', '').split('\n\n');
+                results.forEach((_, resultIdx) => {
+                  allKeys.push(`${msgIndex}-${resultIdx}`);
+                });
+              }
+            });
+            
+            // Find this result's position in the array
+            const currentKey = `${index}-${resultIndex}`;
+            const position = allKeys.indexOf(currentKey);
+            if (position !== -1 && position < 9) {
+              displayNumber = position + 1; // 1-based numbering
+            }
+            
             return (
               <ToolResultRenderer 
                 key={resultIndex} 
                 result={result} 
-                globalIndex={globalIndex + 1} // 1-based for user display
+                displayNumber={displayNumber} // Show 1-9 for selectable results
                 isExpanded={expandedToolResults?.has(resultKey) || false}
                 isFocused={focusedToolResult === resultKey}
                 onToggle={onToggleExpansion ? () => onToggleExpansion(resultKey) : undefined}
@@ -238,11 +261,11 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
 
 const ToolResultRenderer: React.FC<{ 
   result: string;
-  globalIndex?: number;
+  displayNumber?: number;
   isExpanded?: boolean;
   isFocused?: boolean;
   onToggle?: () => void;
-}> = ({ result, globalIndex, isExpanded = false, isFocused = false, onToggle }) => {
+}> = ({ result, displayNumber, isExpanded = false, isFocused = false, onToggle }) => {
   
   // Helper function to check if content should be collapsed
   const shouldCollapseContent = (content: string) => {
@@ -301,6 +324,9 @@ const ToolResultRenderer: React.FC<{
               <Box key={lineIndex}>
                 {lineIndex === 0 ? (
                   <Text>
+                    {displayNumber && (
+                      <Text color="cyan" dimColor>[{displayNumber}] </Text>
+                    )}
                     <Text bold color="green">✓</Text>
                     <Text color="gray">  </Text>
                     <Text>{line}</Text>
@@ -459,8 +485,8 @@ const ToolResultRenderer: React.FC<{
             <Box key={lineIndex}>
               {lineIndex === 0 ? (
                 <Text>
-                  {globalIndex && globalIndex <= 9 && (
-                    <Text color="cyan" dimColor>[{globalIndex}] </Text>
+                  {displayNumber && (
+                    <Text color="cyan" dimColor>[{displayNumber}] </Text>
                   )}
                   <Text color="gray">⎿  </Text>
                   <Text color="red">{line}</Text>
@@ -510,8 +536,8 @@ const ToolResultRenderer: React.FC<{
             <Box key={lineIndex}>
               {lineIndex === 0 ? (
                 <Text>
-                  {globalIndex && globalIndex <= 9 && (
-                    <Text color="cyan" dimColor>[{globalIndex}] </Text>
+                  {displayNumber && (
+                    <Text color="cyan" dimColor>[{displayNumber}] </Text>
                   )}
                   <Text color="gray">⎿  </Text>
                   <Text color="red">{line}</Text>
@@ -546,8 +572,8 @@ const ToolResultRenderer: React.FC<{
       paddingX={isFocused ? 1 : 0}
     >
       <Text>
-        {globalIndex && globalIndex <= 9 && (
-          <Text color="cyan" dimColor>[{globalIndex}] </Text>
+        {displayNumber && (
+          <Text color="cyan" dimColor>[{displayNumber}] </Text>
         )}
         <Text color="gray">⎿  </Text>
         <Text>{result.split('\n')[0]}</Text>
