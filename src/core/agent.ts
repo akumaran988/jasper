@@ -58,7 +58,12 @@ CRITICAL: should_continue FIELD CONTROLS CONVERSATION LOOP:
   * Error state that can't be recovered
 
 Available Tools:
-${this.context.tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
+${this.context.tools.map(tool => {
+  const schema = JSON.stringify(tool.parameters, null, 2);
+  return `- ${tool.name}: ${tool.description}
+  Parameters Schema:
+  ${schema}`;
+}).join('\n\n')}
 
 Response Format (STRICTLY REQUIRED):
 {
@@ -95,6 +100,25 @@ CORRECT Response:
   ],
   "should_continue": true,
   "reasoning": "User requested to ping Google, so I need to execute the bash tool with ping command"
+}
+
+User: "Create a README file in my project"
+CORRECT Response:
+{
+  "content": "I'll create a README.md file for your project.",
+  "tool_calls": [
+    {
+      "id": "call_1234567890_def456",
+      "name": "file_ops",
+      "parameters": {
+        "operation": "create",
+        "file_path": "/path/to/README.md",
+        "content": "# Project Name\n\nProject description..."
+      }
+    }
+  ],
+  "should_continue": true,
+  "reasoning": "User wants to create a README file, using file_ops with operation=create"
 }
 
 WRONG Response (DON'T DO THIS):

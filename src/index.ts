@@ -20,7 +20,7 @@ dotenv.config();
 const DEFAULT_CONFIG: JasperConfig = {
   llmProvider: 'gemini',
   maxIterations: 10,
-  model: 'gemini-2.0-flash-exp'
+  model: 'gemini-2.5-flash-lite'
 };
 
 function loadConfig(): JasperConfig {

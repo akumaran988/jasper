@@ -126,7 +126,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({ message, messages, in
           <Box flexDirection="column">
             <Box>
               <Text color="white">⏺ </Text>
-              <Box flexGrow={1}>
+              <Box>
                 <MarkdownRenderer content={content} />
               </Box>
             </Box>
@@ -200,6 +200,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({ message, messages, in
 };
 
 const ToolResultRenderer: React.FC<{ result: string }> = ({ result }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
   if (result.includes('succeeded:')) {
     const [header, ...contentLines] = result.split('\n');
     const jsonContent = contentLines.join('\n');
@@ -221,7 +222,8 @@ const ToolResultRenderer: React.FC<{ result: string }> = ({ result }) => {
         if (!content) return null;
         
         const lines = content.split('\n');
-        const displayLines = lines.slice(0, 5); // Show first 5 lines
+        const shouldCollapse = lines.length > 5;
+        const displayLines = shouldCollapse && !isExpanded ? lines.slice(0, 5) : lines;
         
         return (
           <Box flexDirection="column" marginLeft={2}>
@@ -231,11 +233,14 @@ const ToolResultRenderer: React.FC<{ result: string }> = ({ result }) => {
                 <Text>{line}</Text>
               </Box>
             ))}
-            {lines.length > 5 && (
+            {shouldCollapse && (
               <Box>
                 <Text color="gray">   </Text>
-                <Text color="blue">
-                  ▶ {lines.length - 5} more lines hidden
+                <Text color="blue" dimColor>
+                  {!isExpanded 
+                    ? `▶ ${lines.length - 5} more lines hidden`
+                    : `▼ Click to collapse`
+                  }
                 </Text>
               </Box>
             )}
@@ -409,4 +414,4 @@ const ToolResultRenderer: React.FC<{ result: string }> = ({ result }) => {
   );
 };
 
-export default MessageRenderer;
+export default React.memo(MessageRenderer);
