@@ -156,8 +156,8 @@ const Terminal: React.FC<TerminalProps> = ({
 
     // Remove Tab navigation - it's too complex for terminal UI
 
-    // Handle Up/Down arrow navigation for tool results (when not typing)
-    if ((key.upArrow || key.downArrow) && !pendingPermission) {
+    // Handle Up/Down arrow navigation for tool results (works even during permission prompts)
+    if ((key.upArrow || key.downArrow)) {
       const toolResultKeys = getAllToolResultKeys();
       
       if (toolResultKeys.length > 0) {
@@ -193,8 +193,8 @@ const Terminal: React.FC<TerminalProps> = ({
       return;
     }
 
-    // Handle number keys (1-9) to quickly focus tool results
-    if (!pendingPermission && !key.ctrl && !key.meta && inputChar >= '1' && inputChar <= '9') {
+    // Handle number keys (1-9) to quickly focus tool results (works even during permission prompts)
+    if (!key.ctrl && !key.meta && inputChar >= '1' && inputChar <= '9') {
       const toolResultKeys = getAllToolResultKeys();
       const keyNumber = parseInt(inputChar);
       const arrayIndex = keyNumber - 1; // Convert 1-based to 0-based array index

@@ -316,9 +316,11 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
+            marginBottom={1}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
-            paddingX={isFocused ? 1 : 0}
+            paddingX={1}
+            paddingY={1}
           >
             {displayLines.map((line: string, lineIndex: number) => (
               <Box key={lineIndex}>
@@ -390,14 +392,19 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
+            marginBottom={1}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
-            paddingX={isFocused ? 1 : 0}
+            paddingX={1}
+            paddingY={1}
           >
             {displayLines.map((line: string, lineIndex: number) => (
               <Box key={lineIndex}>
                 {lineIndex === 0 ? (
                   <Text>
+                    {displayNumber && (
+                      <Text color="cyan" dimColor>[{displayNumber}] </Text>
+                    )}
                     <Text bold color="red">✗</Text>
                     <Text color="gray">  </Text>
                     <Text color="red">{line}</Text>
@@ -424,9 +431,21 @@ const ToolResultRenderer: React.FC<{
     } catch {
       // Fallback for non-JSON results
       return (
-        <Box marginLeft={2}>
-          <Text color="gray">⎿  </Text>
-          <Text color="red">Failed to parse tool result</Text>
+        <Box 
+          marginLeft={2}
+          marginBottom={1}
+          borderStyle={isFocused ? 'single' : undefined}
+          borderColor={isFocused ? 'cyan' : undefined}
+          paddingX={1}
+          paddingY={1}
+        >
+          <Text>
+            {displayNumber && (
+              <Text color="cyan" dimColor>[{displayNumber}] </Text>
+            )}
+            <Text color="gray">⎿  </Text>
+            <Text color="red">Failed to parse tool result</Text>
+          </Text>
         </Box>
       );
     }
@@ -479,7 +498,7 @@ const ToolResultRenderer: React.FC<{
           marginLeft={2}
           borderStyle={isFocused ? 'single' : undefined}
           borderColor={isFocused ? 'cyan' : undefined}
-          paddingX={isFocused ? 1 : 0}
+          paddingX={1}
         >
           {displayLines.map((line: string, lineIndex: number) => (
             <Box key={lineIndex}>
@@ -530,7 +549,7 @@ const ToolResultRenderer: React.FC<{
           marginLeft={2}
           borderStyle={isFocused ? 'single' : undefined}
           borderColor={isFocused ? 'cyan' : undefined}
-          paddingX={isFocused ? 1 : 0}
+          paddingX={1}
         >
           {displayLines.map((line: string, lineIndex: number) => (
             <Box key={lineIndex}>
@@ -567,9 +586,11 @@ const ToolResultRenderer: React.FC<{
   return (
     <Box 
       marginLeft={2}
+      marginBottom={1}
       borderStyle={isFocused ? 'single' : undefined}
       borderColor={isFocused ? 'cyan' : undefined}
-      paddingX={isFocused ? 1 : 0}
+      paddingX={1}
+      paddingY={1}
     >
       <Text>
         {displayNumber && (
