@@ -1,59 +1,52 @@
 # Jasper Project
 
-This is a project developed by AshwinKR. It appears to be a Node.js project based on the presence of `package.json` and `tsconfig.json`.
+This project appears to be a Node.js project. It includes various configuration files, source code, build artifacts, and dependency management files.
 
-## Table of Contents
+## Project Structure
 
-*   [Project Description](#project-description)
-*   [File Structure](#file-structure)
-*   [Key Files](#key-files)
-*   [Dependencies](#dependencies)
-*   [Usage](#usage)
-*   [Configuration](#configuration)
-*   [Contributing](#contributing)
-*   [License](#license)
+- `.claude/`: Likely related to Claude AI integration or configuration.
+- `.env`, `.env.example`: Environment variable configuration files.
+- `.git/`: Git repository directory.
+- `.gitignore`: Specifies intentionally untracked files that Git should ignore.
+- `README.md`: This file.
+- `dist/`: Directory for built or distributed files.
+- `jasper.config.json.example`: Example configuration file for Jasper.
+- `logs/`: Directory for log files.
+- `node_modules/`: Directory containing project dependencies.
+- `package-lock.json`, `package.json`: npm package management files.
+- `src/`: Directory for source code.
+- `tsconfig.json`: TypeScript configuration file.
 
-## Project Description
+## Installation
 
-This project, named Jasper, is a Node.js application. The presence of `src` directory suggests it contains the main source code, and `dist` directory likely holds the compiled output.
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd Jasper
+   ```
 
-## File Structure
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-The project has the following main directories:
-
-*   `.claude`
-*   `.git`
-*   `dist`
-*   `logs`
-*   `node_modules`
-*   `src`
-
-## Key Files
-
-*   `.env` and `.env.example`: Environment variable configuration files.
-*   `.gitignore`: Specifies intentionally untracked files that Git should ignore.
-*   `README.md`: This file, containing project information.
-*   `jasper.config.json.example`: An example configuration file for Jasper.
-*   `package.json`: Defines project metadata and dependencies.
-*   `package-lock.json`: Records the exact versions of dependencies installed.
-*   `tsconfig.json`: TypeScript configuration file.
-
-## Dependencies
-
-The project utilizes Node.js and TypeScript. The `node_modules` directory contains all installed dependencies. Key dependency information can be found in `package.json`.
+3. Copy and configure environment variables (if applicable):
+   ```bash
+   cp .env.example .env
+   # Edit .env file with your specific configurations
+   ```
 
 ## Usage
 
-To run or build this project, you would typically use npm or yarn commands defined in `package.json` (e.g., `npm run build`, `npm start`).
-
-## Configuration
-
-Environment-specific settings can be managed using the `.env` file. An example configuration is provided in `jasper.config.json.example`.
+*To be determined based on the project's specific functionality. Please refer to the source code in the `src/` directory or any documentation within the project for usage instructions.*
 
 ## Contributing
 
-Contributions are welcome! Please refer to the project's contribution guidelines (if any) or reach out to the maintainer.
+Contributions are welcome! Please follow these steps:
 
-## License
-
-[Specify License Here - e.g., MIT License]
+1. Fork the repository.
+2. Create a new branch (`git checkout -b feature/your-feature-name`).
+3. Make your changes.
+4. Commit your changes (`git commit -am 'Add some feature'`)
+5. Push to the branch (`git push origin feature/your-feature-name`)
+6. Create a new Pull Request.

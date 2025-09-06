@@ -52,6 +52,30 @@ const Terminal: React.FC<TerminalProps> = ({
   const [userScrollOffset, setUserScrollOffset] = useState(0);
   const messagesRef = useRef<any>(null);
   
+  // Track expanded tool results by message index and result index
+  const [expandedToolResults, setExpandedToolResults] = useState<Set<string>>(new Set());
+  
+  // Track which tool result is currently focused/selected
+  const [focusedToolResult, setFocusedToolResult] = useState<string | null>(null);
+  
+  // Auto-focus the most recent tool result when new ones appear
+  useEffect(() => {
+    const systemMessages = context.messages.filter(m => 
+      m.role === 'system' && m.content.startsWith('Tool execution results:')
+    );
+    
+    if (systemMessages.length > 0) {
+      const lastSystemIndex = context.messages.findIndex(m => m === systemMessages[systemMessages.length - 1]);
+      const mostRecentKey = `${lastSystemIndex}-0`;
+      
+      // Only auto-focus if no tool result is currently focused, or if this is a new one
+      if (!focusedToolResult || !focusedToolResult.startsWith(lastSystemIndex.toString())) {
+        setFocusedToolResult(mostRecentKey);
+        logger.debug('Auto-focused most recent tool result:', mostRecentKey);
+      }
+    }
+  }, [context.messages.length, focusedToolResult, logger]);
+  
   // Add logging for scroll offset changes
   useEffect(() => {
     logger.warn('📜 USER SCROLL OFFSET CHANGED', {
@@ -102,6 +126,99 @@ const Terminal: React.FC<TerminalProps> = ({
         userScrollOffset
       });
       scrollControls.toggleAutoScroll();
+      return;
+    }
+
+    // Helper function to get all tool result keys
+    const getAllToolResultKeys = () => {
+      const toolResultKeys: string[] = [];
+      context.messages.forEach((msg, msgIndex) => {
+        if (msg.role === 'system' && msg.content.startsWith('Tool execution results:')) {
+          const results = msg.content.replace('Tool execution results:\n', '').split('\n\n');
+          results.forEach((_, resultIndex) => {
+            toolResultKeys.push(`${msgIndex}-${resultIndex}`);
+          });
+        }
+      });
+      return toolResultKeys;
+    };
+
+    // Handle Up/Down arrow navigation for tool results (when not typing)
+    if ((key.upArrow || key.downArrow) && !pendingPermission) {
+      const toolResultKeys = getAllToolResultKeys();
+      
+      if (toolResultKeys.length > 0) {
+        const currentIndex = focusedToolResult ? toolResultKeys.indexOf(focusedToolResult) : -1;
+        
+        let nextIndex;
+        if (key.upArrow) {
+          nextIndex = currentIndex <= 0 ? toolResultKeys.length - 1 : currentIndex - 1;
+        } else {
+          nextIndex = currentIndex >= toolResultKeys.length - 1 ? 0 : currentIndex + 1;
+        }
+        
+        const newFocused = toolResultKeys[nextIndex];
+        setFocusedToolResult(newFocused);
+        logger.info('Navigated to tool result:', newFocused);
+      }
+      return;
+    }
+
+    // Handle Ctrl+Up/Down for jumping to first/last tool result
+    if (key.ctrl && (key.upArrow || key.downArrow)) {
+      const toolResultKeys = getAllToolResultKeys();
+      
+      if (toolResultKeys.length > 0) {
+        const newFocused = key.upArrow ? toolResultKeys[0] : toolResultKeys[toolResultKeys.length - 1];
+        setFocusedToolResult(newFocused);
+        logger.info('Jumped to tool result:', newFocused, key.upArrow ? '(first)' : '(last)');
+      }
+      return;
+    }
+
+    // Handle number keys (1-9) to quickly focus tool results
+    if (!pendingPermission && !key.ctrl && !key.meta && inputChar >= '1' && inputChar <= '9') {
+      const toolResultKeys = getAllToolResultKeys();
+      const index = parseInt(inputChar) - 1;
+      
+      if (index < toolResultKeys.length) {
+        const targetKey = toolResultKeys[index];
+        setFocusedToolResult(targetKey);
+        logger.info('Quick-focused tool result:', targetKey, `(${inputChar})`);
+      }
+      return;
+    }
+
+    // Handle tool result expansion (Ctrl+E)
+    if (key.ctrl && inputChar === 'e') {
+      // Use focused tool result if available, otherwise use the most recent one
+      let targetResultKey = focusedToolResult;
+      
+      if (!targetResultKey) {
+        // Find the most recent tool result
+        const systemMessages = context.messages.filter(m => 
+          m.role === 'system' && m.content.startsWith('Tool execution results:')
+        );
+        
+        if (systemMessages.length > 0) {
+          const lastSystemIndex = context.messages.findIndex(m => m === systemMessages[systemMessages.length - 1]);
+          targetResultKey = `${lastSystemIndex}-0`; // First result in the last system message
+        }
+      }
+      
+      if (targetResultKey) {
+        setExpandedToolResults(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(targetResultKey)) {
+            newSet.delete(targetResultKey);
+            logger.info('Collapsed tool result:', targetResultKey);
+          } else {
+            newSet.add(targetResultKey);
+            logger.info('Expanded tool result:', targetResultKey);
+          }
+          return newSet;
+        });
+      }
       return;
     }
 
@@ -676,7 +793,26 @@ const Terminal: React.FC<TerminalProps> = ({
                 key={`${originalIndex}-${index}`} 
                 message={message} 
                 messages={context.messages} 
-                index={originalIndex} 
+                index={originalIndex}
+                expandedToolResults={expandedToolResults}
+                focusedToolResult={focusedToolResult}
+                onToggleExpansion={(resultKey: string) => {
+                  setExpandedToolResults(prev => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(resultKey)) {
+                      newSet.delete(resultKey);
+                      logger.info('Collapsed tool result:', resultKey);
+                    } else {
+                      newSet.add(resultKey);
+                      logger.info('Expanded tool result:', resultKey);
+                    }
+                    return newSet;
+                  });
+                }}
+                onFocusToolResult={(resultKey: string) => {
+                  setFocusedToolResult(resultKey);
+                  logger.info('Focused tool result:', resultKey);
+                }}
               />
             );
           });
@@ -738,7 +874,10 @@ const Terminal: React.FC<TerminalProps> = ({
             {scrollState.isAutoScrollEnabled && scrollState.isAtBottom && (
               <Text color="green">🔄 Auto-scroll </Text>
             )}
-            <Text color="blue">Ctrl+S:toggle Ctrl+Home/End:navigate</Text>
+            {focusedToolResult && (
+              <Text color="cyan">🎯 Focused: {focusedToolResult} </Text>
+            )}
+            <Text color="blue">1-9:select ↑↓:navigate Ctrl+↑↓:jump Ctrl+E:expand</Text>
           </Text>
         </Box>
         <Box>
