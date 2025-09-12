@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { render, Text } from 'ink';
 import { Command } from 'commander';
 import dotenv from 'dotenv';
@@ -11,8 +11,10 @@ import Terminal from './ui/terminal.js';
 import { ConversationAgent } from './core/agent.js';
 import { GeminiProvider, CustomProvider } from './core/llm.js';
 import { registerCoreTools } from './tools/index.js';
-import { JasperConfig, ConversationContext } from './types/index.js';
+import { JasperConfig, ConversationContext, PermissionContext, PermissionResponse, PermissionRule, Message } from './types/index.js';
 import { initializeLogger, closeLogger, getLogger } from './utils/logger.js';
+import { shouldCompactConversation, createConversationSummary, countConversationTokens } from './utils/tokenCounter.js';
+import { permissionRegistry } from './permissions/registry.js';
 
 // Load environment variables
 dotenv.config();
@@ -21,7 +23,8 @@ dotenv.config();
 const DEFAULT_CONFIG: JasperConfig = {
   llmProvider: 'gemini',
   maxIterations: 10,
-  model: 'gemini-2.5-flash-lite'
+  model: 'gemini-2.5-flash-lite',
+  tokenLimit: 10000
 };
 
 function loadConfig(): JasperConfig {
@@ -74,22 +77,153 @@ const App: React.FC<AppProps> = ({ config }) => {
     maxIterations: config.maxIterations,
     currentIteration: 0
   });
+  
+  const handleClearConversation = useCallback(() => {
+    setContext(prev => ({
+      ...prev,
+      messages: [],
+      currentIteration: 0
+    }));
+    // Also clear session approvals
+    sessionApprovalsRef.current.clear();
+    setSessionApprovals(new Map());
+  }, []);
+  
+  const handleCompactConversation = useCallback(async () => {
+    setIsCompacting(true);
+    
+    try {
+      // Create AI-generated summary in parallel with the compacting delay
+      const compactingDelay = new Promise(resolve => setTimeout(resolve, 10000)); // Show compacting indicator for 10 seconds
+      
+      let summaryPromise: Promise<string>;
+      try {
+        // Get the current LLM provider for summary generation
+        const currentConfig = config;
+        const llmProvider = createLLMProvider(currentConfig);
+        
+        // Create AI summary of messages to be compacted (all but last 10)
+        const messagesToSummarize = context.messages.slice(0, -10);
+        summaryPromise = createConversationSummary(messagesToSummarize, llmProvider);
+      } catch (error) {
+        console.warn('Failed to initialize LLM for summary, using basic fallback');
+        summaryPromise = createConversationSummary(context.messages.slice(0, -10));
+      }
+      
+      // Wait for both the delay and summary generation
+      const [, summary] = await Promise.all([compactingDelay, summaryPromise]);
+      
+      setContext(prev => {
+        // Keep only recent messages (last 10) plus the summary
+        const recentMessages = prev.messages.slice(-10);
+        
+        // Create summary message
+        const summaryMessage: Message = {
+          role: 'system',
+          content: summary,
+          timestamp: new Date()
+        };
+        
+        return {
+          ...prev,
+          messages: [summaryMessage, ...recentMessages],
+          currentIteration: 0
+        };
+      });
+    } finally {
+      setIsCompacting(false);
+    }
+  }, [config, context.messages]);
+  
+  // Auto-compact when token limit is reached
+  const checkAndAutoCompact = useCallback(async () => {
+    const tokenLimit = config.tokenLimit || 10000;
+    
+    if (shouldCompactConversation(context.messages, tokenLimit)) {
+      console.log(`🤏 Auto-compacting conversation (${countConversationTokens(context.messages)} > ${tokenLimit} tokens)`);
+      await handleCompactConversation();
+    }
+  }, [context.messages, config.tokenLimit, handleCompactConversation]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCompacting, setIsCompacting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pendingPermission, setPendingPermission] = useState<{
-    toolCall: any;
-    resolve: (approved: boolean) => void;
-  } | null>(null);
+  const [pendingPermission, setPendingPermission] = useState<PermissionContext | null>(null);
+  const [sessionApprovals, setSessionApprovals] = useState<Map<string, PermissionRule>>(new Map());
+  const sessionApprovalsRef = useRef<Map<string, PermissionRule>>(new Map());
+
+  // Helper function to generate permission key using the registry
+  const getPermissionKey = (toolCall: any): string => {
+    return permissionRegistry.generatePermissionKey(toolCall);
+  };
 
   const requestPermission = async (toolCall: any): Promise<boolean> => {
+    // Debug: Log current session approvals and tool call
+    const logger = getLogger();
+    const currentApprovals = sessionApprovalsRef.current;
+    logger.debug('Permission check details', {
+      toolCall,
+      sessionApprovals: Array.from(currentApprovals.entries()),
+      sessionApprovalsSize: currentApprovals.size,
+      generatedKey: permissionRegistry.generatePermissionKey(toolCall)
+    });
+    
+    // Use the permission registry to check if permission is granted
+    const permissionResult = permissionRegistry.checkPermission(toolCall, currentApprovals);
+    
+    logger.debug('Permission check result', { permissionResult });
+    
+    if (permissionResult.allowed) {
+      if (permissionResult.reason) {
+        console.log(`✅ ${permissionResult.reason}`);
+      }
+      return true;
+    }
+    
     return new Promise((resolve) => {
-      setPendingPermission({ toolCall, resolve });
+      const permissionContext: PermissionContext = {
+        toolCall,
+        resolve: (response: PermissionResponse) => {
+          switch (response) {
+            case 'yes':
+              resolve(true);
+              break;
+            case 'session':
+              // Create permission rule for session using registry
+              const rule = permissionRegistry.createPermissionRule(toolCall);
+              const permissionKey = getPermissionKey(toolCall);
+              logger.debug('Saving session approval', {
+                permissionKey,
+                rule,
+                toolCall
+              });
+              
+              // Update both ref (for immediate access) and state (for UI updates)
+              sessionApprovalsRef.current.set(permissionKey, rule);
+              setSessionApprovals(prev => {
+                const newMap = new Map(prev).set(permissionKey, rule);
+                logger.debug('Session approvals after save', {
+                  approvals: Array.from(newMap.entries()),
+                  refSize: sessionApprovalsRef.current.size
+                });
+                return newMap;
+              });
+              resolve(true);
+              break;
+            case 'no':
+            default:
+              resolve(false);
+              break;
+          }
+        },
+        sessionApprovals: currentApprovals
+      };
+      setPendingPermission(permissionContext);
     });
   };
 
-  const handlePermissionResponse = (approved: boolean) => {
+  const handlePermissionResponse = (response: PermissionResponse) => {
     if (pendingPermission) {
-      pendingPermission.resolve(approved);
+      pendingPermission.resolve(response);
       setPendingPermission(null);
     }
   };
@@ -118,7 +252,7 @@ const App: React.FC<AppProps> = ({ config }) => {
   }, [config]);
 
   const handleMessage = async (message: string) => {
-    if (!agent || isProcessing) return;
+    if (!agent || isProcessing || isCompacting) return;
 
     setIsProcessing(true);
     setError(null);
@@ -126,6 +260,9 @@ const App: React.FC<AppProps> = ({ config }) => {
     try {
       const updatedContext = await agent.processMessage(message);
       setContext(updatedContext);
+      
+      // Check if we need to auto-compact after processing
+      setTimeout(checkAndAutoCompact, 100); // Small delay to ensure context is updated
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
@@ -146,8 +283,12 @@ const App: React.FC<AppProps> = ({ config }) => {
     context,
     onMessage: handleMessage,
     isProcessing,
+    isCompacting,
     pendingPermission,
-    onPermissionResponse: handlePermissionResponse
+    onPermissionResponse: handlePermissionResponse,
+    sessionApprovals,
+    onClearConversation: handleClearConversation,
+    onCompactConversation: handleCompactConversation
   });
 };
 
@@ -163,6 +304,7 @@ program
   .option('-k, --api-key <key>', 'API key for the LLM provider')
   .option('-e, --endpoint <url>', 'Custom endpoint URL (for custom provider)')
   .option('-i, --max-iterations <number>', 'Maximum iterations per conversation', '10')
+  .option('-t, --token-limit <number>', 'Token limit before auto-compacting', '10000')
   .option('-c, --config <path>', 'Path to config file')
   .option('-l, --log-file [path]', 'Enable logging to file (optional path)', false)
   .option('-d, --debug', 'Enable debug logging')
@@ -196,6 +338,7 @@ program
     if (options.apiKey) config.apiKey = options.apiKey;
     if (options.endpoint) config.customEndpoint = options.endpoint;
     if (options.maxIterations) config.maxIterations = parseInt(options.maxIterations);
+    if (options.tokenLimit) config.tokenLimit = parseInt(options.tokenLimit);
 
     // Log startup info before rendering
     if (logConfig.logToFile) {

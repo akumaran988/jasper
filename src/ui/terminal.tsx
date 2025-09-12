@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Box, Text, useInput, useApp, useStdout } from 'ink';
-import { ConversationContext } from '../types/index.js';
+import { ConversationContext, PermissionContext, PermissionResponse, PermissionRule, SlashCommand } from '../types/index.js';
+import { permissionRegistry } from '../permissions/registry.js';
 import MessageRenderer from './renderer.js';
 import InputHandler from './input.js';
 import { useAutoScroll } from '../hooks/useAutoScroll.js';
@@ -10,44 +11,164 @@ interface TerminalProps {
   context: ConversationContext;
   onMessage: (message: string) => Promise<void>;
   isProcessing: boolean;
-  pendingPermission?: {
-    toolCall: any;
-    resolve: (approved: boolean) => void;
-  } | null;
-  onPermissionResponse?: (approved: boolean) => void;
+  isCompacting?: boolean;
+  pendingPermission?: PermissionContext | null;
+  onPermissionResponse?: (response: PermissionResponse) => void;
+  sessionApprovals?: Map<string, PermissionRule>;
+  onClearConversation?: () => void;
+  onCompactConversation?: () => void;
 }
 
 const Terminal: React.FC<TerminalProps> = ({ 
   context, 
   onMessage, 
   isProcessing, 
+  isCompacting = false,
   pendingPermission, 
-  onPermissionResponse 
+  onPermissionResponse,
+  sessionApprovals = new Map(),
+  onClearConversation,
+  onCompactConversation
 }) => {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const logger = useMemo(() => getLogger(), []);
   const [input, setInput] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
+  
+  // Slash command states
+  const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+  
+  // Define available slash commands (Claude Code-style)
+  const slashCommands: SlashCommand[] = useMemo(() => [
+    {
+      name: 'add-dir',
+      description: 'Add a new working directory',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        logger.info('Add directory functionality');
+        // TODO: Implement add directory
+      }
+    },
+    {
+      name: 'agents',
+      description: 'Manage agent configurations',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        logger.info('Agent management');
+        // TODO: Implement agent management
+      }
+    },
+    {
+      name: 'bashes',
+      description: 'List and manage background bash shells',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        logger.info('Background bash management');
+        // TODO: Implement bash management
+      }
+    },
+    {
+      name: 'bug',
+      description: 'Submit feedback about Jasper',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        logger.info('Bug reporting');
+        // TODO: Implement bug reporting
+      }
+    },
+    {
+      name: 'clear',
+      description: 'Clear conversation history and free up context',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        onClearConversation?.();
+        logger.info('Conversation cleared');
+      }
+    },
+    {
+      name: 'compact',
+      description: 'Clear conversation history but keep a summary in context. Optional: /compact [instructions for summarization]',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        onCompactConversation?.();
+        logger.info('Conversation compacted');
+      }
+    },
+    {
+      name: 'config',
+      description: 'Open config panel',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        logger.info('Opening config');
+        // TODO: Implement config panel
+      }
+    },
+    {
+      name: 'cost',
+      description: 'Show the total cost and duration of the current session',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        logger.info('Showing cost information');
+        // TODO: Implement cost tracking
+      }
+    },
+    {
+      name: 'doctor',
+      description: 'Diagnose and verify your Jasper installation and settings',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        logger.info('Running diagnostics');
+        // TODO: Implement diagnostics
+      }
+    },
+    {
+      name: 'exit',
+      description: 'Exit the REPL',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        process.exit(0);
+      }
+    },
+    {
+      name: 'permissions',
+      description: 'Manage tool permissions for this session',
+      handler: () => {
+        setInput('');
+        setCursorPosition(0);
+        setShowCommandSuggestions(false);
+        logger.info('Opening permissions management');
+        // TODO: Implement permissions UI
+      }
+    }
+  ], [logger, onClearConversation, onCompactConversation]);
   const [displayCursorPosition, setDisplayCursorPosition] = useState(0); // Track cursor in display coordinates
   const [isPastedContent, setIsPastedContent] = useState(false);
   const [pasteBlocks, setPasteBlocks] = useState<Array<{start: number, end: number, content: string}>>([]);
-  const [animationFrame, setAnimationFrame] = useState(0);
+  const [animationFrame] = useState(0);
   const [lastPasteTime, setLastPasteTime] = useState(0);
   
-  // Auto-scroll functionality
-  const [scrollState, scrollControls] = useAutoScroll(
-    context.messages.length,
-    isProcessing,
-    !!pendingPermission,
-    {
-      enabled: true,
-      scrollToBottomOnUpdate: true,
-      disableOnManualScroll: true,
-      debugLogging: true
-    }
-  );
-
   // Track scroll position for manual scroll detection
   const [userScrollOffset, setUserScrollOffset] = useState(0);
   const messagesRef = useRef<any>(null);
@@ -57,6 +178,22 @@ const Terminal: React.FC<TerminalProps> = ({
   
   // Track which tool result is currently focused/selected
   const [focusedToolResult, setFocusedToolResult] = useState<string | null>(null);
+  
+  // Track if we're actively navigating tool results to prevent auto-scroll interference
+  const [isNavigatingToolResults, setIsNavigatingToolResults] = useState(false);
+  
+  // Auto-scroll functionality
+  const [scrollState, scrollControls] = useAutoScroll(
+    context.messages.length,
+    isProcessing,
+    !!pendingPermission,
+    {
+      enabled: true,
+      scrollToBottomOnUpdate: !isNavigatingToolResults, // Disable auto-scroll during navigation
+      disableOnManualScroll: true,
+      debugLogging: true
+    }
+  );
   
   // Track pagination for tool results (when more than 9)
   const [toolResultPage, setToolResultPage] = useState(0); // 0 = results 1-9, 1 = results 10-18, etc.
@@ -156,8 +293,41 @@ const Terminal: React.FC<TerminalProps> = ({
 
     // Remove Tab navigation - it's too complex for terminal UI
 
-    // Handle Up/Down arrow navigation for tool results (works even during permission prompts)
-    if ((key.upArrow || key.downArrow)) {
+    // Handle Tab completion for slash commands
+    if (key.tab && showCommandSuggestions && input.startsWith('/')) {
+      const commandName = input.slice(1);
+      const matchingCommands = slashCommands.filter(cmd => 
+        cmd.name.startsWith(commandName.toLowerCase())
+      );
+      
+      if (matchingCommands.length > 0) {
+        const selectedCommand = matchingCommands[selectedCommandIndex] || matchingCommands[0];
+        setInput('/' + selectedCommand.name);
+        setCursorPosition(selectedCommand.name.length + 1);
+        setShowCommandSuggestions(false);
+      }
+      return;
+    }
+
+    // Handle Up/Down arrow navigation for slash commands
+    if ((key.upArrow || key.downArrow) && showCommandSuggestions && !pendingPermission) {
+      const commandName = input.slice(1);
+      const matchingCommands = slashCommands.filter(cmd => 
+        cmd.name.startsWith(commandName.toLowerCase())
+      );
+      
+      if (matchingCommands.length > 0) {
+        if (key.upArrow) {
+          setSelectedCommandIndex(prev => prev > 0 ? prev - 1 : matchingCommands.length - 1);
+        } else {
+          setSelectedCommandIndex(prev => prev < matchingCommands.length - 1 ? prev + 1 : 0);
+        }
+      }
+      return;
+    }
+
+    // Handle Up/Down arrow navigation for tool results (only when not in permission prompt)
+    if ((key.upArrow || key.downArrow) && !pendingPermission && !showCommandSuggestions) {
       const toolResultKeys = getAllToolResultKeys();
       
       if (toolResultKeys.length > 0) {
@@ -173,8 +343,11 @@ const Terminal: React.FC<TerminalProps> = ({
         const newFocused = toolResultKeys[nextIndex];
         setFocusedToolResult(newFocused);
         
-        // Disable auto-scroll during navigation to keep focused item visible
-        scrollControls.disableAutoScroll();
+        // Mark as actively navigating to prevent auto-scroll interference
+        setIsNavigatingToolResults(true);
+        
+        // Clear navigation state after a short delay
+        setTimeout(() => setIsNavigatingToolResults(false), 500);
         
         logger.info('Navigated to tool result:', newFocused);
       }
@@ -188,13 +361,18 @@ const Terminal: React.FC<TerminalProps> = ({
       if (toolResultKeys.length > 0) {
         const newFocused = key.upArrow ? toolResultKeys[0] : toolResultKeys[toolResultKeys.length - 1];
         setFocusedToolResult(newFocused);
+        
+        // Mark as actively navigating to prevent auto-scroll interference
+        setIsNavigatingToolResults(true);
+        setTimeout(() => setIsNavigatingToolResults(false), 500);
+        
         logger.info('Jumped to tool result:', newFocused, key.upArrow ? '(first)' : '(last)');
       }
       return;
     }
 
-    // Handle number keys (1-9) to quickly focus tool results (works even during permission prompts)
-    if (!key.ctrl && !key.meta && inputChar >= '1' && inputChar <= '9') {
+    // Handle number keys (1-9) to quickly focus tool results (only when not in permission prompt)
+    if (!key.ctrl && !key.meta && inputChar >= '1' && inputChar <= '9' && !pendingPermission) {
       const toolResultKeys = getAllToolResultKeys();
       const keyNumber = parseInt(inputChar);
       const arrayIndex = keyNumber - 1; // Convert 1-based to 0-based array index
@@ -202,6 +380,11 @@ const Terminal: React.FC<TerminalProps> = ({
       if (arrayIndex < toolResultKeys.length) {
         const targetKey = toolResultKeys[arrayIndex];
         setFocusedToolResult(targetKey);
+        
+        // Mark as actively navigating to prevent auto-scroll interference
+        setIsNavigatingToolResults(true);
+        setTimeout(() => setIsNavigatingToolResults(false), 500);
+        
         logger.info('Quick-focused tool result:', targetKey, `(key ${inputChar} -> array index ${arrayIndex}, total keys: ${toolResultKeys.length}, keys: ${JSON.stringify(toolResultKeys)})`);
       } else {
         logger.warn('Key selection failed:', `key ${inputChar} -> array index ${arrayIndex}, but only ${toolResultKeys.length} results available: ${JSON.stringify(toolResultKeys)}`);
@@ -333,11 +516,15 @@ const Terminal: React.FC<TerminalProps> = ({
     // Handle permission responses
     if (pendingPermission) {
       if (inputChar === 'y' || inputChar === 'Y') {
-        onPermissionResponse?.(true);
+        onPermissionResponse?.('yes');
         return;
       }
       if (inputChar === 'n' || inputChar === 'N') {
-        onPermissionResponse?.(false);
+        onPermissionResponse?.('no');
+        return;
+      }
+      if (inputChar === 's' || inputChar === 'S') {
+        onPermissionResponse?.('session');
         return;
       }
       // Ignore all other keys during permission prompt
@@ -364,6 +551,20 @@ const Terminal: React.FC<TerminalProps> = ({
         
         return;
       } else if (!isProcessing && !pendingPermission && !key.shift) {
+        // Handle slash commands
+        if (showCommandSuggestions && input.startsWith('/')) {
+          const commandName = input.slice(1);
+          const matchingCommands = slashCommands.filter(cmd => 
+            cmd.name.startsWith(commandName.toLowerCase())
+          );
+          
+          if (matchingCommands.length > 0) {
+            const selectedCommand = matchingCommands[selectedCommandIndex] || matchingCommands[0];
+            selectedCommand.handler();
+            return;
+          }
+        }
+        
         // Don't auto-submit if we just pasted content recently
         const recentPaste = lastPasteTime && (Date.now() - lastPasteTime) < 1000;
         if (recentPaste) {
@@ -655,6 +856,20 @@ const Terminal: React.FC<TerminalProps> = ({
         }
       }
       setDisplayCursorPosition(newDisplayPos + adjustment);
+      
+      // Check for slash command detection
+      const newInput = input.slice(0, currentPos) + processedChar + input.slice(currentPos);
+      if (newInput.startsWith('/') && cursorPosition === 0 && newInput.length === 1) {
+        // User just typed '/' at the beginning - show command suggestions
+        setShowCommandSuggestions(true);
+        setSelectedCommandIndex(0);
+      } else if (newInput.startsWith('/') && newInput.indexOf(' ') === -1) {
+        // User is typing a command - filter suggestions
+        setShowCommandSuggestions(true);
+      } else if (!newInput.startsWith('/')) {
+        // User cleared slash or typed something else
+        setShowCommandSuggestions(false);
+      }
                      
       // Check if this input should be merged with a recent paste block (even if not detected as paste itself)
       const shouldMergeWithRecentPaste = () => {
@@ -720,9 +935,16 @@ const Terminal: React.FC<TerminalProps> = ({
     <Box flexDirection="column" minHeight={3}>
       {/* Header - Claude Code style */}
       {context.messages.length === 0 && (
-        <Box flexDirection="column" marginBottom={2}>
+        <Box 
+          flexDirection="column" 
+          marginBottom={2} 
+          borderStyle="round" 
+          borderColor="gray" 
+          paddingX={2} 
+          paddingY={1}
+        >
           <Text color="white" bold>
-            ✻ Welcome to Jasper!
+            ❅ Welcome to Claude Code!
           </Text>
           <Text></Text>
           <Text color="gray">
@@ -732,24 +954,6 @@ const Terminal: React.FC<TerminalProps> = ({
           <Text color="gray">
             cwd: {process.cwd()}
           </Text>
-          <Text></Text>
-          <Text color="white" bold>
-            Tips for getting started:
-          </Text>
-          <Text></Text>
-          <Text color="gray">
-            1. Ask Jasper to create a new app or clone a repository
-          </Text>
-          <Text color="gray">
-            2. Use Jasper to help with file analysis, editing, bash commands and git
-          </Text>
-          <Text color="gray">
-            3. Be as specific as you would with another engineer for the best results
-          </Text>
-          <Text color="gray">
-            4. ✔ Run /terminal-setup to set up terminal integration
-          </Text>
-          <Text></Text>
         </Box>
       )}
 
@@ -862,28 +1066,11 @@ const Terminal: React.FC<TerminalProps> = ({
 
       {/* Permission prompt */}
       {pendingPermission && (
-        <Box flexDirection="column" marginTop={1} marginBottom={1}>
-          <Box marginBottom={1}>
-            <Text color="yellow" bold>
-              🔐 Permission Required
-            </Text>
-          </Box>
-          <Box marginBottom={1}>
-            <Text>
-              Tool: <Text color="cyan" bold>{pendingPermission.toolCall.name}</Text>
-            </Text>
-          </Box>
-          <Box marginBottom={1}>
-            <Text>
-              Command: <Text color="gray">{JSON.stringify(pendingPermission.toolCall.parameters)}</Text>
-            </Text>
-          </Box>
-          <Box>
-            <Text color="white">
-              Allow this tool to execute? <Text color="green" bold>(Y)</Text>es / <Text color="red" bold>(N)</Text>o
-            </Text>
-          </Box>
-        </Box>
+        <PermissionSelector 
+          pendingPermission={pendingPermission}
+          sessionApprovals={sessionApprovals}
+          onPermissionResponse={onPermissionResponse}
+        />
       )}
 
       {/* Animated Processing indicator */}
@@ -892,6 +1079,34 @@ const Terminal: React.FC<TerminalProps> = ({
           frame={animationFrame} 
           iteration={context.currentIteration}
         />
+      )}
+
+      {/* Compacting indicator */}
+      {isCompacting && (
+        <CompactingIndicator />
+      )}
+
+      {/* Slash command suggestions - Claude Code style */}
+      {showCommandSuggestions && input.startsWith('/') && (
+        <Box flexDirection="column" width="100%" borderStyle="single" borderColor="gray" paddingX={1} marginBottom={1}>
+          {(() => {
+            const commandName = input.slice(1);
+            const matchingCommands = slashCommands.filter(cmd => 
+              cmd.name.startsWith(commandName.toLowerCase())
+            );
+            
+            return matchingCommands.map((cmd, index) => (
+              <Box key={cmd.name} width="100%" justifyContent="space-between">
+                <Text color={index === selectedCommandIndex ? 'white' : 'gray'} backgroundColor={index === selectedCommandIndex ? 'blue' : undefined}>
+                  /{cmd.name} {index === selectedCommandIndex && cmd.name.includes(' ') ? '(alias)' : ''}
+                </Text>
+                <Text color="gray">
+                  {cmd.description}
+                </Text>
+              </Box>
+            ));
+          })()}
+        </Box>
       )}
 
       {/* Input - always show unless there's a permission prompt */}
@@ -940,6 +1155,8 @@ const Terminal: React.FC<TerminalProps> = ({
           <Text color="gray" dimColor>
             {pendingPermission 
               ? '⏵⏵ awaiting permission (Y/N to respond)'
+              : isCompacting
+              ? '⏵⏵ compacting conversation'
               : isProcessing 
               ? `⏵⏵ processing (${context.currentIteration}/${context.maxIterations})` 
               : '⏵⏵ ready (ctrl+c to exit)'
@@ -947,6 +1164,128 @@ const Terminal: React.FC<TerminalProps> = ({
           </Text>
         </Box>
       </Box>
+    </Box>
+  );
+};
+
+const PermissionSelector: React.FC<{
+  pendingPermission: PermissionContext;
+  sessionApprovals: Map<string, PermissionRule>;
+  onPermissionResponse?: (response: PermissionResponse) => void;
+}> = ({ pendingPermission, sessionApprovals, onPermissionResponse }) => {
+  const [selectedOption, setSelectedOption] = useState<PermissionResponse>('yes');
+  
+  // Generate descriptive label for session permission using the registry
+  const getSessionLabel = () => {
+    return permissionRegistry.getSessionDescription(pendingPermission.toolCall);
+  };
+
+  const options: Array<{value: PermissionResponse, label: string, color: string, key: string}> = [
+    { value: 'yes', label: 'Yes (just this time)', color: 'green', key: 'Y' },
+    { value: 'session', label: getSessionLabel(), color: 'blue', key: 'S' },
+    { value: 'no', label: 'No, let me give different instructions', color: 'red', key: 'N' }
+  ];
+
+  useInput((inputChar: string, key: any) => {
+    if (key.upArrow) {
+      const currentIndex = options.findIndex(opt => opt.value === selectedOption);
+      const newIndex = currentIndex > 0 ? currentIndex - 1 : options.length - 1;
+      setSelectedOption(options[newIndex].value);
+      return;
+    }
+    
+    if (key.downArrow) {
+      const currentIndex = options.findIndex(opt => opt.value === selectedOption);
+      const newIndex = currentIndex < options.length - 1 ? currentIndex + 1 : 0;
+      setSelectedOption(options[newIndex].value);
+      return;
+    }
+    
+    if (key.return) {
+      onPermissionResponse?.(selectedOption);
+      return;
+    }
+    
+    // Handle keyboard shortcuts
+    const option = options.find(opt => opt.key.toLowerCase() === inputChar.toLowerCase());
+    if (option) {
+      onPermissionResponse?.(option.value);
+      return;
+    }
+  });
+
+  return (
+    <Box flexDirection="column" marginTop={1} marginBottom={1} borderStyle="round" borderColor="yellow" paddingX={2} paddingY={1}>
+      <Box marginBottom={1}>
+        <Text color="yellow" bold>
+          🔐 Permission Required
+        </Text>
+      </Box>
+      <Box marginBottom={1}>
+        <Text>
+          Tool: <Text color="cyan" bold>{pendingPermission.toolCall.name}</Text>
+        </Text>
+      </Box>
+      <Box marginBottom={1}>
+        <Text>
+          Command: <Text color="gray">{JSON.stringify(pendingPermission.toolCall.parameters)}</Text>
+        </Text>
+      </Box>
+      {sessionApprovals.size > 0 && (
+        <Box flexDirection="column" marginBottom={1}>
+          <Text color="green">
+            ℹ️ Current session approvals:
+          </Text>
+          {Array.from(sessionApprovals.values()).map((rule, index) => (
+            <Text key={index} color="gray">
+              • {rule.toolName} {rule.scope === 'folder' ? `(${rule.scopeValue})` : 
+                                rule.scope === 'domain' ? `(${rule.scopeValue})` : ''}
+            </Text>
+          ))}
+        </Box>
+      )}
+      <Box flexDirection="column" marginBottom={1}>
+        <Text color="gray">Select an option (↑↓ arrows to navigate, Enter to confirm):</Text>
+      </Box>
+      {options.map((option) => (
+        <Box key={option.value} marginBottom={0}>
+          <Text color={selectedOption === option.value ? option.color : 'gray'}>
+            {selectedOption === option.value ? '▶ ' : '  '}
+            <Text bold={selectedOption === option.value} color={selectedOption === option.value ? option.color : 'gray'}>
+              ({option.key})
+            </Text>
+            <Text color={selectedOption === option.value ? option.color : 'gray'}> {option.label}</Text>
+          </Text>
+        </Box>
+      ))}
+    </Box>
+  );
+};
+
+const CompactingIndicator: React.FC = () => {
+  const [frame, setFrame] = useState(0);
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame(f => (f + 1) % 60);
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
+  
+  const compressIcons = ['🗜️', '📦', '🤏', '💾', '📊'];
+  const currentIcon = compressIcons[Math.floor(frame / 12) % compressIcons.length];
+  
+  const colors = ['cyan', 'yellow', 'magenta', 'green'];
+  const currentColor = colors[Math.floor(frame / 15) % colors.length];
+  
+  return (
+    <Box marginTop={1}>
+      <Text color={currentColor as any}>
+        {currentIcon} Compacting conversation...
+      </Text>
+      <Text color="gray" dimColor>
+        {' '}(creating summary to save context)
+      </Text>
     </Box>
   );
 };

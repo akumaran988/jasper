@@ -50,4 +50,27 @@ export interface JasperConfig {
   maxIterations: number;
   model?: string;
   apiThrottleMs?: number;
+  tokenLimit?: number; // Default: 10000
+}
+
+export type PermissionResponse = 'yes' | 'session' | 'no';
+
+export interface PermissionRule {
+  toolName: string;
+  scope: 'tool' | 'domain' | 'folder' | 'custom';
+  scopeValue?: string; // domain for web fetch, folder path for file ops, or custom scope identifier
+  approved: boolean;
+  timestamp: Date;
+}
+
+export interface PermissionContext {
+  toolCall: ToolCall;
+  resolve: (response: PermissionResponse) => void;
+  sessionApprovals?: Map<string, PermissionRule>; // Track approved rules for session
+}
+
+export interface SlashCommand {
+  name: string;
+  description: string;
+  handler: (...args: string[]) => Promise<void> | void;
 }

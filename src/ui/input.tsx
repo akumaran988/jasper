@@ -12,8 +12,8 @@ interface InputHandlerProps {
 const InputHandler: React.FC<InputHandlerProps> = ({ input, isPasted = false, cursorPosition = 0, pasteBlocks = [] }) => {
   const { stdout } = useStdout();
   const terminalWidth = stdout?.columns || 80;
-  const borderWidth = Math.max(40, Math.min(terminalWidth - 4, 120)); // Cap at 120 chars
-  const borderLine = '─'.repeat(borderWidth);
+  const borderWidth = Math.max(20, Math.min(terminalWidth - 4, terminalWidth * 0.95)); // Responsive to terminal width
+  const borderLine = '─'.repeat(Math.floor(borderWidth));
   
   
   const inputLines = input.split(/\r\n|\r|\n/);

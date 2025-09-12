@@ -114,7 +114,7 @@ export class FileOperationsTool implements Tool {
     
     const result: string[] = [];
     for (let i = start - 1; i < end; i++) {
-      result.push(`${String(i + 1).padStart(4, ' ')}→${lines[i]}`);
+      result.push(`${String(i + 1).padStart(4, ' ')} ${lines[i]}`);
     }
     
     return result.join('\n');

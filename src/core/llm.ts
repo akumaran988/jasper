@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { LLMProvider, Message, Tool, AIResponse } from '../types/index.js';
+import { getLogger } from '../utils/logger.js';
 
 export class GeminiProvider implements LLMProvider {
   name = 'gemini';
@@ -24,26 +25,53 @@ export class GeminiProvider implements LLMProvider {
       });
 
       const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      const logger = getLogger();
+      logger.debug('LLM raw response', {
+        responseLength: text.length,
+        responsePreview: text.substring(0, 200) + (text.length > 200 ? '...' : '')
+      });
 
       let parsedResponse: any = {};
       try {
         // First try to parse as direct JSON
         parsedResponse = JSON.parse(text);
-      } catch {
-        // If that fails, check for nested JSON in markdown code block
-        if (text.includes('```json') && text.includes('```')) {
-          const jsonMatch = text.match(/```json\s*\n([\s\S]*?)\n```/);
-          if (jsonMatch && jsonMatch[1]) {
-            try {
-              parsedResponse = JSON.parse(jsonMatch[1]);
-            } catch (innerError) {
+      } catch (parseError) {
+        logger.debug('Direct JSON parsing failed, trying cleanup', { 
+          error: parseError instanceof Error ? parseError.message : 'Unknown error',
+          textPreview: text.substring(0, 100)
+        });
+        
+        // Try to clean up malformed JSON (common issue with Gemini)
+        try {
+          // Fix common JSON issues: actual newlines in JSON strings
+          let cleanedText = text
+            .replace(/\n/g, '\\n')    // Replace actual newlines with escaped ones
+            .replace(/\r/g, '\\r')    // Replace actual carriage returns  
+            .replace(/\t/g, '\\t')    // Replace actual tabs
+            .trim();                  // Remove leading/trailing whitespace
+          
+          parsedResponse = JSON.parse(cleanedText);
+          logger.debug('Successfully parsed cleaned JSON');
+        } catch (cleanupError) {
+          // If cleanup fails, check for markdown code block
+          if (text.includes('```json') && text.includes('```')) {
+            const jsonMatch = text.match(/```json\s*\n([\s\S]*?)\n```/);
+            if (jsonMatch && jsonMatch[1]) {
+              try {
+                parsedResponse = JSON.parse(jsonMatch[1]);
+                logger.debug('Successfully parsed JSON from markdown block');
+              } catch (innerError) {
+                logger.debug('All JSON parsing attempts failed, using raw text');
+                parsedResponse = { content: text };
+              }
+            } else {
               parsedResponse = { content: text };
             }
           } else {
+            logger.debug('No valid JSON found, using raw text as content');
             parsedResponse = { content: text };
           }
-        } else {
-          parsedResponse = { content: text };
         }
       }
 

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Message } from '../types/index.js';
 import MarkdownRenderer from './markdown.js';
+import { displayRegistry } from '../display/registry.js';
+import { DisplayContext } from '../display/types.js';
 
 interface MessageRendererProps {
   message: Message;
@@ -149,7 +151,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
       );
     }
 
-    // Tool calls with Claude Code-style formatting
+    // Tool calls with corresponding results (grouped together)
     if (toolCalls && toolCalls.length > 0) {
       toolCalls.forEach((call, toolIndex) => {
         // Format parameters more cleanly like Claude Code
@@ -162,11 +164,33 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
           })
           .join(', ');
         
+        // Find the corresponding tool result in the next system message
+        let toolResult = null;
+        if (index + 1 < messages.length && messages[index + 1].role === 'system' && 
+            messages[index + 1].content.startsWith('Tool execution results:')) {
+          const resultsContent = messages[index + 1].content.replace('Tool execution results:\n', '');
+          const allResults = resultsContent.split('\n\n');
+          
+          // Find the result that matches this tool call ID
+          toolResult = allResults.find(result => result.includes(call.id));
+        }
+        
         renderParts.push(
           <Box key={`tool-${toolIndex}`} flexDirection="column" marginBottom={1}>
             <Text>
               <Text color="blue">⏺</Text> <Text bold color="white">{call.name}</Text>({paramDisplay})
             </Text>
+            {toolResult && (
+              <Box marginLeft={2} marginTop={1}>
+                <ToolResultRenderer 
+                  result={toolResult}
+                  displayNumber={toolIndex + 1}
+                  isExpanded={expandedToolResults?.has(`${index}-${toolIndex}`) || false}
+                  isFocused={focusedToolResult === `${index}-${toolIndex}`}
+                  onToggle={onToggleExpansion ? () => onToggleExpansion(`${index}-${toolIndex}`) : undefined}
+                />
+              </Box>
+            )}
           </Box>
         );
       });
@@ -182,6 +206,20 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
   const renderSystemMessage = () => {
     // Handle tool results exactly like Claude Code
     if (message.content.startsWith('Tool execution results:')) {
+      // Check if this tool result message immediately follows an assistant message with tool calls
+      // If so, skip rendering it here as it's already rendered with the tool calls
+      if (index > 0 && messages[index - 1].role === 'assistant') {
+        try {
+          const prevMessage = JSON.parse(messages[index - 1].content);
+          if (prevMessage.tool_calls && prevMessage.tool_calls.length > 0) {
+            // Skip rendering - this is handled by the assistant message renderer
+            return null;
+          }
+        } catch {
+          // If parsing fails, continue with normal rendering
+        }
+      }
+      
       const results = message.content.replace('Tool execution results:\n', '');
       
       // Parse individual tool results
@@ -272,6 +310,45 @@ const ToolResultRenderer: React.FC<{
     const lines = content.split('\n');
     return lines.length > 5 || content.length > 200;
   };
+
+  // Helper function to extract tool information from result
+  const extractToolInfo = (result: string): { toolName: string; operation?: string; parameters: Record<string, any> } | null => {
+    if (!result.includes('succeeded:')) {
+      return null;
+    }
+
+    const [header, ...contentLines] = result.split('\n');
+    const jsonContent = contentLines.join('\n');
+    
+    try {
+      const parsed = JSON.parse(jsonContent);
+      
+      // Try to extract tool information from the header
+      // Format is usually: "🔧 tool_name succeeded:"
+      const toolMatch = header.match(/🔧\s+(\w+)\s+succeeded:/);
+      if (toolMatch) {
+        const toolName = toolMatch[1];
+        
+        // Try to extract operation from parameters or result
+        let operation = undefined;
+        if (parsed.parameters?.operation) {
+          operation = parsed.parameters.operation;
+        } else if (parsed.result?.operation) {
+          operation = parsed.result.operation;
+        }
+        
+        return {
+          toolName,
+          operation,
+          parameters: parsed.parameters || {}
+        };
+      }
+    } catch {
+      // JSON parsing failed
+    }
+    
+    return null;
+  };
   
   // Helper function to truncate content for collapsed view
   const getTruncatedContent = (content: string) => {
@@ -297,20 +374,112 @@ const ToolResultRenderer: React.FC<{
         if (parsed.stdout && parsed.stdout.trim()) {
           content = parsed.stdout.trim();
         } else if (parsed.result) {
-          content = typeof parsed.result === 'string' 
-            ? parsed.result 
-            : JSON.stringify(parsed.result, null, 2);
+          // For file operations, show the actual content, not JSON
+          if (typeof parsed.result === 'string') {
+            content = parsed.result;
+          } else if (parsed.result && typeof parsed.result === 'object') {
+            // If result has content property (like file read operations), show that
+            if (parsed.result.content) {
+              content = parsed.result.content;
+            } else if (parsed.result.files && Array.isArray(parsed.result.files)) {
+              // For file listing operations, format nicely
+              content = parsed.result.files.join('\n');
+            } else if (parsed.result.items && Array.isArray(parsed.result.items)) {
+              // For directory listing operations (list_dir), format as tree structure
+              const formatDirectoryTree = (items: any[]) => {
+                let output: string[] = [];
+                
+                items.forEach((item, index) => {
+                  const isLast = index === items.length - 1;
+                  const prefix = isLast ? '└── ' : '├── ';
+                  const icon = item.type === 'directory' ? '📁 ' : '📄 ';
+                  
+                  output.push(`${prefix}${icon}${item.name}`);
+                });
+                
+                return output.join('\n');
+              };
+              
+              content = formatDirectoryTree(parsed.result.items);
+            } else if ((parsed.result.operation === 'update' || parsed.result.message?.includes('Updated lines')) && parsed.result.diff) {
+              // For file update operations (including update_lines), show the diff
+              const formatDiff = (diff: any) => {
+                let output: string[] = [];
+                output.push(`📝 ${parsed.result.message || 'File updated'}`);
+                output.push('');
+                output.push('📋 Changes:');
+                
+                if (typeof diff === 'string') {
+                  // Handle unified diff format
+                  output.push(diff);
+                } else if (diff.added || diff.removed || diff.lines) {
+                  if (diff.lines) {
+                    diff.lines.forEach((line: any) => {
+                      if (line.added) {
+                        output.push(`+ ${line.value || line.content || line}`);
+                      } else if (line.removed) {
+                        output.push(`- ${line.value || line.content || line}`);
+                      } else {
+                        output.push(`  ${line.value || line.content || line}`);
+                      }
+                    });
+                  } else {
+                    if (diff.removed) {
+                      output.push('🔴 Removed:');
+                      output.push(`- ${diff.removed}`);
+                    }
+                    if (diff.added) {
+                      output.push('🟢 Added:');
+                      output.push(`+ ${diff.added}`);
+                    }
+                  }
+                }
+                
+                return output.join('\n');
+              };
+              
+              content = formatDiff(parsed.result.diff);
+            } else if (parsed.result.operation === 'delete') {
+              // For file delete operations, show confirmation
+              content = `🗑️ File deleted: ${parsed.result.file_path || parsed.result.path || 'unknown'}`;
+              if (parsed.result.size) {
+                content += `\n📊 Size: ${parsed.result.size} bytes`;
+              }
+            } else if (parsed.result.operation === 'create' || parsed.result.operation === 'write') {
+              // For file create/write operations, show confirmation
+              const filePath = parsed.result.file_path || parsed.result.path || 'unknown';
+              const size = parsed.result.size || 'unknown size';
+              content = `📄 File ${parsed.result.operation === 'create' ? 'created' : 'written'}: ${filePath}`;
+              if (parsed.result.size) {
+                content += `\n📊 Size: ${size} bytes`;
+              }
+              if (parsed.result.lines) {
+                content += `\n📝 Lines: ${parsed.result.lines}`;
+              }
+            } else {
+              // Fallback to JSON for other structured results
+              content = JSON.stringify(parsed.result, null, 2);
+            }
+          }
         }
         
         if (!content) return null;
         
         const shouldCollapse = shouldCollapseContent(content);
         const displayContent = shouldCollapse && !isExpanded ? getTruncatedContent(content) : content;
-        const displayLines = displayContent.split('\n');
         
-        // Determine if this was successful or failed
-        const isSuccess = parsed.success;
-        const toolColor = isSuccess ? 'green' : 'red';
+        // Check if content already has line numbers (from fileops tool)
+        const hasExistingLineNumbers = /^\s*\d+\s/.test(content.split('\n')[0]);
+        
+        // Add line numbers for file content (when content looks like file content)
+        // Don't add line numbers for diffs, operation summaries, directory listings, or content that already has line numbers
+        const isFileContent = !hasExistingLineNumbers && content.includes('\n') && (
+          parsed.result?.content || // File read operation
+          (typeof parsed.result === 'string' && content.split('\n').length > 3) // Multi-line string content
+        ) && !parsed.result?.operation && !content.includes('📝 File') && !content.includes('🗑️ File') && !content.includes('📄 File') && !content.includes('├── ') && !content.includes('└── ');
+        
+        let displayLines = displayContent.split('\n');
+        
         
         return (
           <Box 
@@ -324,21 +493,43 @@ const ToolResultRenderer: React.FC<{
           >
             {displayLines.map((line: string, lineIndex: number) => (
               <Box key={lineIndex}>
-                {lineIndex === 0 ? (
-                  <Text>
-                    {displayNumber && (
-                      <Text color="cyan" dimColor>[{displayNumber}] </Text>
-                    )}
-                    <Text bold color="green">✓</Text>
-                    <Text color="gray">  </Text>
+                <Text>
+                  {lineIndex === 0 ? (
+                    <>
+                      {displayNumber && (
+                        <Text color="cyan" dimColor>[{displayNumber}] </Text>
+                      )}
+                      <Text bold color="green">✓</Text>
+                      <Text> </Text>
+                    </>
+                  ) : (
+                    <Text>      </Text>
+                  )}
+                  {isFileContent ? (
+                    <>
+                      <Text color="gray">{String(lineIndex + 1).padStart(4, ' ')}</Text>
+                      <Text> {line}</Text>
+                    </>
+                  ) : hasExistingLineNumbers ? (
+                    // Content already has line numbers from fileops, style them properly
+                    (() => {
+                      const match = line.match(/^(\s*)(\d+)(\s+)(.*)$/);
+                      if (match) {
+                        const [, leadingSpace, lineNum, middleSpace, content] = match;
+                        return (
+                          <>
+                            <Text color="gray">{lineNum.padStart(4, ' ')}</Text>
+                            <Text> {content}</Text>
+                          </>
+                        );
+                      } else {
+                        return <Text>{line}</Text>;
+                      }
+                    })()
+                  ) : (
                     <Text>{line}</Text>
-                  </Text>
-                ) : (
-                  <Text>
-                    <Text color="gray">   </Text>
-                    <Text>{line}</Text>
-                  </Text>
-                )}
+                  )}
+                </Text>
               </Box>
             ))}
             {shouldCollapse && (

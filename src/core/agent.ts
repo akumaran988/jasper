@@ -149,11 +149,12 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
   }
 
   private addAssistantMessage(response: AIResponse): void {
+    // Store response with proper structure, but avoid double-encoding
     this.context.messages.push({
       role: 'assistant',
       content: JSON.stringify({
         content: response.content,
-        tool_calls: response.tool_calls,
+        tool_calls: response.tool_calls || [],
         reasoning: response.reasoning
       }),
       timestamp: new Date()
@@ -221,35 +222,33 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
         // Add assistant's response to conversation
         this.addAssistantMessage(aiResponse);
 
-        // Execute any tool calls with user permission
+        // Execute tool calls sequentially with individual permission and results
         if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
-          // Request permission for each tool call
-          const approvedToolCalls = [];
           for (const toolCall of aiResponse.tool_calls) {
+            // Request permission for this specific tool call
             const permission = await this.requestToolPermission(toolCall);
-            if (permission) {
-              approvedToolCalls.push(toolCall);
-            }
-          }
-          
-          let toolResults: any[] = [];
-          
-          if (approvedToolCalls.length > 0) {
-            toolResults = await globalToolRegistry.executeMultiple(approvedToolCalls);
-            this.addToolResults(toolResults);
             
-            // Check if any tools failed critically
-            const criticalFailures = toolResults.filter(result => !result.success && this.isCriticalFailure(result));
-            if (criticalFailures.length > 0) {
-              break;
+            if (permission) {
+              // Execute this single tool call
+              const toolResults = await globalToolRegistry.executeMultiple([toolCall]);
+              this.addToolResults(toolResults);
+              
+              // Check if this tool failed critically
+              const criticalFailures = toolResults.filter(result => !result.success && this.isCriticalFailure(result));
+              if (criticalFailures.length > 0) {
+                break; // Stop executing remaining tools if critical failure
+              }
+            } else {
+              // Add a denial result for this specific tool
+              this.addToolResults([{
+                id: toolCall.id || 'permission_denied',
+                success: false,
+                error: 'User denied permission to execute this tool',
+                result: null
+              }]);
+              
+              // Continue to ask for permission for remaining tools
             }
-          } else {
-            this.addToolResults([{
-              id: 'permission_denied',
-              success: false,
-              error: 'User denied permission to execute tools',
-              result: null
-            }]);
           }
         }
 
