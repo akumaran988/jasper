@@ -93,10 +93,7 @@ const App: React.FC<AppProps> = ({ config }) => {
     setIsCompacting(true);
     
     try {
-      // Create AI-generated summary in parallel with the compacting delay
-      const compactingDelay = new Promise(resolve => setTimeout(resolve, 10000)); // Show compacting indicator for 10 seconds
-      
-      let summaryPromise: Promise<string>;
+      let summary: string;
       try {
         // Get the current LLM provider for summary generation
         const currentConfig = config;
@@ -104,14 +101,11 @@ const App: React.FC<AppProps> = ({ config }) => {
         
         // Create AI summary of messages to be compacted (all but last 10)
         const messagesToSummarize = context.messages.slice(0, -10);
-        summaryPromise = createConversationSummary(messagesToSummarize, llmProvider);
+        summary = await createConversationSummary(messagesToSummarize, llmProvider);
       } catch (error) {
         console.warn('Failed to initialize LLM for summary, using basic fallback');
-        summaryPromise = createConversationSummary(context.messages.slice(0, -10));
+        summary = await createConversationSummary(context.messages.slice(0, -10));
       }
-      
-      // Wait for both the delay and summary generation
-      const [, summary] = await Promise.all([compactingDelay, summaryPromise]);
       
       setContext(prev => {
         // Keep only recent messages (last 10) plus the summary
@@ -236,12 +230,16 @@ const App: React.FC<AppProps> = ({ config }) => {
       // Create LLM provider
       const llmProvider = createLLMProvider(config);
       
-      // Create conversation agent with permission callback and throttling
+      // Create conversation agent with permission callback, throttling, and real-time UI updates
       const conversationAgent = new ConversationAgent(
         llmProvider, 
         config.maxIterations,
         requestPermission,
-        config.apiThrottleMs || 3000
+        config.apiThrottleMs || 3000,
+        // Real-time context update callback
+        (updatedContext) => {
+          setContext(updatedContext);
+        }
       );
       setAgent(conversationAgent);
       setContext(conversationAgent.getContext());

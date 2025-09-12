@@ -6,6 +6,7 @@ export class ConversationAgent {
   private systemPrompt: string;
   private context: ConversationContext;
   private onRequestPermission?: (toolCall: ToolCall) => Promise<boolean>;
+  private onContextUpdate?: (context: ConversationContext) => void;
   private lastApiCall: number = 0;
   private apiThrottleMs: number = 3000; // 3 seconds default
 
@@ -13,10 +14,12 @@ export class ConversationAgent {
     llmProvider: LLMProvider, 
     maxIterations: number = 10, 
     onRequestPermission?: (toolCall: ToolCall) => Promise<boolean>,
-    apiThrottleMs: number = 3000
+    apiThrottleMs: number = 3000,
+    onContextUpdate?: (context: ConversationContext) => void
   ) {
     this.llmProvider = llmProvider;
     this.onRequestPermission = onRequestPermission;
+    this.onContextUpdate = onContextUpdate;
     this.apiThrottleMs = apiThrottleMs;
     this.context = {
       messages: [],
@@ -219,12 +222,47 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
 
         // AI response received
 
-        // Add assistant's response to conversation
-        this.addAssistantMessage(aiResponse);
+        // If there's content but no tool calls, add the assistant message
+        if (!aiResponse.tool_calls || aiResponse.tool_calls.length === 0) {
+          this.addAssistantMessage(aiResponse);
+          
+          // Notify UI immediately
+          if (this.onContextUpdate) {
+            this.onContextUpdate({ ...this.context });
+          }
+        } else {
+          // If there's both content and tool calls, add content first
+          if (aiResponse.content && aiResponse.content.trim()) {
+            const contentOnlyResponse = {
+              ...aiResponse,
+              tool_calls: [] // Don't show tool calls in this message
+            };
+            this.addAssistantMessage(contentOnlyResponse);
+            
+            // Notify UI of content update
+            if (this.onContextUpdate) {
+              this.onContextUpdate({ ...this.context });
+            }
+          }
+        }
 
-        // Execute tool calls sequentially with individual permission and results
+        // Execute tool calls sequentially with individual messages
         if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
           for (const toolCall of aiResponse.tool_calls) {
+            // Add individual tool call message
+            const toolCallMessage = {
+              content: "",
+              tool_calls: [toolCall],
+              reasoning: `Executing ${toolCall.name}`,
+              should_continue: true
+            };
+            this.addAssistantMessage(toolCallMessage);
+            
+            // Notify UI of tool call display
+            if (this.onContextUpdate) {
+              this.onContextUpdate({ ...this.context });
+            }
+            
             // Request permission for this specific tool call
             const permission = await this.requestToolPermission(toolCall);
             
@@ -232,6 +270,11 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
               // Execute this single tool call
               const toolResults = await globalToolRegistry.executeMultiple([toolCall]);
               this.addToolResults(toolResults);
+              
+              // Notify UI of tool result immediately
+              if (this.onContextUpdate) {
+                this.onContextUpdate({ ...this.context });
+              }
               
               // Check if this tool failed critically
               const criticalFailures = toolResults.filter(result => !result.success && this.isCriticalFailure(result));
@@ -246,6 +289,11 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
                 error: 'User denied permission to execute this tool',
                 result: null
               }]);
+              
+              // Notify UI of permission denial immediately
+              if (this.onContextUpdate) {
+                this.onContextUpdate({ ...this.context });
+              }
               
               // Continue to ask for permission for remaining tools
             }
