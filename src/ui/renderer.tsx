@@ -119,7 +119,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
         if (extracted) {
           content = extracted;
         } else {
-          content = '⚠️ Could not parse AI response. Raw content detected.';
+          content = '⚠️  Could not parse AI response. Please retry.';
         }
       } else {
         // Doesn't look like JSON, treat as plain text
@@ -132,16 +132,17 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     // Final safety check: Never render raw JSON to the user
     // This should only trigger if something went very wrong
     if (content && content.trim().startsWith('{') && content.includes('"content"') && content.includes('"tool_calls"')) {
-      content = '⚠️ AI response parsing error. Please try restarting Jasper.';
+      content = '⚠️  AI response parsing error. Please retry.';
     }
 
-    // Main content with Claude Code-style bullet (white bullet for AI responses)
+    // Main content with Claude Code-style bullet (white bullet for AI responses, red for errors)
     if (content && content.trim()) {
+      const isError = content.includes('⚠️  AI response parsing error') || content.includes('⚠️  Could not parse AI response');
       renderParts.push(
         <Box key="content" flexDirection="column" marginBottom={0}>
           <Box flexDirection="column">
             <Box>
-              <Text color="white">⏺ </Text>
+              <Text color={isError ? "red" : "white"}>⏺ </Text>
               <Box>
                 <MarkdownRenderer content={content} />
               </Box>
