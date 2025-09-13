@@ -129,14 +129,16 @@ const App: React.FC<AppProps> = ({ config }) => {
     }
   }, [config, context.messages]);
   
-  // Auto-compact when token limit is reached
+  // Auto-compact when token limit is reached - DISABLED to preserve all messages
   const checkAndAutoCompact = useCallback(async () => {
-    const tokenLimit = config.tokenLimit || 10000;
-    
-    if (shouldCompactConversation(context.messages, tokenLimit)) {
-      console.log(`🤏 Auto-compacting conversation (${countConversationTokens(context.messages)} > ${tokenLimit} tokens)`);
-      await handleCompactConversation();
-    }
+    // DISABLED: Auto-compaction removes messages, preventing access to full history
+    // Users can manually compact with /compact command if needed
+    // const tokenLimit = config.tokenLimit || 10000;
+    // 
+    // if (shouldCompactConversation(context.messages, tokenLimit)) {
+    //   console.log(`🤏 Auto-compacting conversation (${countConversationTokens(context.messages)} > ${tokenLimit} tokens)`);
+    //   await handleCompactConversation();
+    // }
   }, [context.messages, config.tokenLimit, handleCompactConversation]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
@@ -259,8 +261,8 @@ const App: React.FC<AppProps> = ({ config }) => {
       const updatedContext = await agent.processMessage(message);
       setContext(updatedContext);
       
-      // Check if we need to auto-compact after processing
-      setTimeout(checkAndAutoCompact, 100); // Small delay to ensure context is updated
+      // Auto-compact disabled to preserve all messages for scrolling
+      // setTimeout(checkAndAutoCompact, 100); // Small delay to ensure context is updated
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);

@@ -463,20 +463,23 @@ const Terminal: React.FC<TerminalProps> = ({
           totalMessages: context.messages.length
         });
       } else if (key.pageDown) {
-        const maxMessages = context.messages.length;
-        const newOffset = Math.max(0, userScrollOffset + scrollAmount);
-        setUserScrollOffset(newOffset);
-        logger.warn('⬇️ Manual scroll down executed', { 
-          previousOffset: userScrollOffset,
-          newOffset,
-          scrollAmount,
-          totalMessages: maxMessages
-        });
+        const totalMessages = context.messages.length;
+        const newOffset = userScrollOffset + scrollAmount;
         
-        // If scrolled to bottom, re-enable auto-scroll
-        if (newOffset >= maxMessages - scrollAmount) {
+        // Don't scroll past the end of messages
+        if (newOffset >= totalMessages) {
+          // At the end - enable auto-scroll and reset offset
+          setUserScrollOffset(0);
           scrollControls.enableAutoScroll();
-          logger.info('Re-enabled auto-scroll after reaching bottom');
+          logger.info('Reached end of messages - enabling auto-scroll');
+        } else {
+          setUserScrollOffset(newOffset);
+          logger.warn('⬇️ Manual scroll down executed', { 
+            previousOffset: userScrollOffset,
+            newOffset,
+            scrollAmount,
+            totalMessages
+          });
         }
       }
       return;
@@ -964,69 +967,34 @@ const Terminal: React.FC<TerminalProps> = ({
             m.role !== 'system' || m.content.startsWith('Tool execution results:')
           );
           
-          // Handle scrolling by limiting visible messages
-          const terminalHeight = stdout?.rows || 24;
-          const availableHeight = terminalHeight - 8; // Account for header, input, status
-          
-          // Reduced logging to prevent spam during render loops
-          if (filteredMessages.length % 5 === 0) { // Only log every 5th message count
-            logger.debug('Height calculation', {
-              terminalHeight,
-              availableHeight,
-              totalMessages: filteredMessages.length
-            });
-          }
-          
+          // ALWAYS show ALL messages - no truncation for message persistence
+          // The terminal scroll functionality should handle display, not message filtering
           let visibleMessages = filteredMessages;
           
-          // If auto-scroll is disabled and user has scrolled, show from offset
+          // Handle manual scrolling by showing messages from the scroll offset
           if (!scrollState.isAutoScrollEnabled && userScrollOffset > 0) {
+            // When manually scrolling, show messages starting from the offset
+            // But don't limit the total number - let terminal scrolling handle overflow
             const startIndex = Math.max(0, userScrollOffset);
-            const endIndex = Math.min(filteredMessages.length, startIndex + availableHeight);
-            visibleMessages = filteredMessages.slice(startIndex, endIndex);
+            visibleMessages = filteredMessages.slice(startIndex);
             
-            logger.debug('Showing messages with manual scroll offset', {
+            logger.debug('Manual scroll: showing messages from offset', {
               totalMessages: filteredMessages.length,
               startIndex,
-              endIndex,
               userScrollOffset,
-              availableHeight,
+              showingCount: visibleMessages.length,
               autoScrollEnabled: scrollState.isAutoScrollEnabled
             });
           } else {
-            // Auto-scroll enabled - show latest messages
-            const startIndex = Math.max(0, filteredMessages.length - availableHeight);
-            visibleMessages = filteredMessages.slice(startIndex);
+            // Auto-scroll enabled - show ALL messages (no truncation)
+            visibleMessages = filteredMessages;
             
-            // Only log when startIndex actually changes
-            if (startIndex !== 0 || filteredMessages.length % 10 === 0) {
-              logger.debug('Auto-scroll calculation', {
+            // Only log occasionally to prevent spam
+            if (filteredMessages.length % 10 === 0) {
+              logger.debug('Auto-scroll: showing all messages', {
                 totalMessages: filteredMessages.length,
-                startIndex,
-                showingAllMessages: startIndex === 0
+                showingAllMessages: true
               });
-            }
-            
-            // DON'T reset user scroll offset here - it causes render loops and jumps to top
-            // The userScrollOffset should only be reset by explicit user actions (Ctrl+End)
-            if (userScrollOffset > 0) {
-              logger.debug('Auto-scroll active but user has scroll offset - keeping offset for smooth transition', {
-                userScrollOffset,
-                totalMessages: filteredMessages.length,
-                startIndex,
-                autoScrollEnabled: scrollState.isAutoScrollEnabled
-              });
-            }
-            
-            if (scrollState.isAutoScrollEnabled && filteredMessages.length > 0) {
-              // Reduced logging to prevent spam
-              if (filteredMessages.length % 3 === 0) { // Only log every 3rd message count
-                logger.debug('Auto-scroll showing latest messages', {
-                  totalMessages: filteredMessages.length,
-                  visibleCount: visibleMessages.length,
-                  showingAll: filteredMessages.length <= availableHeight
-                });
-              }
             }
           }
           

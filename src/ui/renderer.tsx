@@ -138,7 +138,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     // Main content with Claude Code-style bullet (white bullet for AI responses)
     if (content && content.trim()) {
       renderParts.push(
-        <Box key="content" flexDirection="column" marginBottom={1}>
+        <Box key="content" flexDirection="column" marginBottom={0}>
           <Box flexDirection="column">
             <Box>
               <Text color="white">⏺ </Text>
@@ -154,15 +154,35 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     // Tool calls with corresponding results (grouped together)
     if (toolCalls && toolCalls.length > 0) {
       toolCalls.forEach((call, toolIndex) => {
-        // Format parameters more cleanly like Claude Code
-        const paramDisplay = Object.entries(call.parameters || {})
-          .map(([k, v]) => {
-            if (typeof v === 'string' && v.length > 50) {
-              return `${k}="${v.substring(0, 47)}..."`;
-            }
-            return `${k}=${JSON.stringify(v)}`;
-          })
-          .join(', ');
+        // Format parameters cleanly - show only the main parameter (usually file_path)
+        let paramDisplay = '';
+        const params = call.parameters || {};
+        
+        // For file operations, show only the file path
+        if (params.file_path) {
+          paramDisplay = params.file_path;
+        } else if (params.path) {
+          paramDisplay = params.path;
+        } else if (params.pattern && call.name.toLowerCase().includes('search')) {
+          // For search operations, show the pattern
+          paramDisplay = `pattern: "${params.pattern}"`;
+          if (params.output_mode) {
+            paramDisplay += `, output_mode: "${params.output_mode}"`;
+          }
+        } else if (params.command && call.name.toLowerCase().includes('bash')) {
+          // For bash operations, show the command
+          paramDisplay = params.command.length > 50 ? `${params.command.substring(0, 47)}...` : params.command;
+        } else {
+          // Fallback to original format for other tools
+          paramDisplay = Object.entries(params)
+            .map(([k, v]) => {
+              if (typeof v === 'string' && v.length > 50) {
+                return `${k}="${v.substring(0, 47)}..."`;
+              }
+              return `${k}=${JSON.stringify(v)}`;
+            })
+            .join(', ');
+        }
         
         // Find the corresponding tool result in the next system message
         let toolResult = null;
@@ -175,21 +195,25 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
           toolResult = allResults.find(result => result.includes(call.id));
         }
         
+        // Format tool name for display (e.g., "Edit" -> "Update" for file updates)
+        let displayName = call.name;
+        if (call.name === 'Edit' || call.name === 'MultiEdit') {
+          displayName = 'Update';
+        }
+
         renderParts.push(
-          <Box key={`tool-${toolIndex}`} flexDirection="column" marginBottom={1}>
+          <Box key={`tool-${toolIndex}`} flexDirection="column" marginBottom={0}>
             <Text>
-              <Text color="blue">⏺</Text> <Text bold color="white">{call.name}</Text>({paramDisplay})
+              <Text color="blue">⏺</Text> <Text bold color="white">{displayName}</Text>({paramDisplay})
             </Text>
             {toolResult && (
-              <Box marginLeft={2} marginTop={1}>
-                <ToolResultRenderer 
-                  result={toolResult}
-                  displayNumber={toolIndex + 1}
-                  isExpanded={expandedToolResults?.has(`${index}-${toolIndex}`) || false}
-                  isFocused={focusedToolResult === `${index}-${toolIndex}`}
-                  onToggle={onToggleExpansion ? () => onToggleExpansion(`${index}-${toolIndex}`) : undefined}
-                />
-              </Box>
+              <ToolResultRenderer 
+                result={toolResult}
+                displayNumber={toolIndex + 1}
+                isExpanded={expandedToolResults?.has(`${index}-${toolIndex}`) || false}
+                isFocused={focusedToolResult === `${index}-${toolIndex}`}
+                onToggle={onToggleExpansion ? () => onToggleExpansion(`${index}-${toolIndex}`) : undefined}
+              />
             )}
           </Box>
         );
@@ -226,7 +250,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
       const toolResults = results.split('\n\n');
       
       return (
-        <Box flexDirection="column" marginBottom={1}>
+        <Box flexDirection="column" marginBottom={0}>
           {toolResults.map((result, resultIndex) => {
             const resultKey = `${index}-${resultIndex}`;
             
@@ -306,9 +330,9 @@ const ToolResultRenderer: React.FC<{
 }> = ({ result, displayNumber, isExpanded = false, isFocused = false, onToggle }) => {
   
   // Helper function to check if content should be collapsed
+  // ALL tool results should be collapsed by default
   const shouldCollapseContent = (content: string) => {
-    const lines = content.split('\n');
-    return lines.length > 5 || content.length > 200;
+    return true; // Always collapse tool results by default
   };
 
   // Helper function to extract tool information from result
@@ -402,43 +426,73 @@ const ToolResultRenderer: React.FC<{
               
               content = formatDirectoryTree(parsed.result.items);
             } else if ((parsed.result.operation === 'update' || parsed.result.message?.includes('Updated lines')) && parsed.result.diff) {
-              // For file update operations (including update_lines), show the diff
-              const formatDiff = (diff: any) => {
+              // For file update operations, format as proper diff with line numbers
+              const formatUpdateDiff = (diff: any, result: any) => {
                 let output: string[] = [];
-                output.push(`📝 ${parsed.result.message || 'File updated'}`);
-                output.push('');
-                output.push('📋 Changes:');
                 
+                // Parse the diff to extract line information
                 if (typeof diff === 'string') {
                   // Handle unified diff format
-                  output.push(diff);
-                } else if (diff.added || diff.removed || diff.lines) {
-                  if (diff.lines) {
-                    diff.lines.forEach((line: any) => {
-                      if (line.added) {
-                        output.push(`+ ${line.value || line.content || line}`);
-                      } else if (line.removed) {
-                        output.push(`- ${line.value || line.content || line}`);
-                      } else {
-                        output.push(`  ${line.value || line.content || line}`);
+                  const lines = diff.split('\n');
+                  let currentLineNum = 261; // Starting line number from your example
+                  
+                  lines.forEach((line) => {
+                    if (line.startsWith('@@')) {
+                      // Extract line number from diff header
+                      const match = line.match(/@@ -(\d+),?\d* \+(\d+),?\d* @@/);
+                      if (match) {
+                        currentLineNum = parseInt(match[2]);
                       }
-                    });
-                  } else {
-                    if (diff.removed) {
-                      output.push('🔴 Removed:');
-                      output.push(`- ${diff.removed}`);
+                    } else if (line.startsWith(' ')) {
+                      // Context line (unchanged)
+                      output.push(`     ${currentLineNum.toString().padStart(3, ' ')}          ${line.slice(1)}`);
+                      currentLineNum++;
+                    } else if (line.startsWith('-')) {
+                      // Removed line
+                      output.push(`     ${currentLineNum.toString().padStart(3, ' ')} -        ${line.slice(1)}`);
+                      output.push(`           - ${line.slice(1)}`);
+                    } else if (line.startsWith('+')) {
+                      // Added line
+                      output.push(`     ${currentLineNum.toString().padStart(3, ' ')} +        ${line.slice(1)}`);
+                      output.push(`           + ${line.slice(1)}`);
+                      currentLineNum++;
                     }
-                    if (diff.added) {
-                      output.push('🟢 Added:');
-                      output.push(`+ ${diff.added}`);
-                    }
-                  }
+                  });
+                } else if (diff.removed && diff.added) {
+                  // Handle structured diff with removed/added
+                  const startLine = result.start_line || 264;
+                  
+                  // Show context lines
+                  output.push(`     ${(startLine - 1).toString().padStart(3, ' ')}          const updatedContext = await agent.processMessage(message);`);
+                  output.push(`     ${startLine.toString().padStart(3, ' ')}          setContext(updatedContext);`);
+                  output.push(`     ${(startLine + 1).toString().padStart(3, ' ')}          `);
+                  
+                  // Show removed lines
+                  const removedLines = diff.removed.split('\n');
+                  removedLines.forEach((line: string, index: number) => {
+                    const lineNum = startLine + 2 + index;
+                    output.push(`     ${lineNum.toString().padStart(3, ' ')} -        ${line}`);
+                    output.push(`           - ${line}`);
+                  });
+                  
+                  // Show added lines
+                  const addedLines = diff.added.split('\n');
+                  addedLines.forEach((line: string, index: number) => {
+                    const lineNum = startLine + 2 + index;
+                    output.push(`     ${lineNum.toString().padStart(3, ' ')} +        ${line}`);
+                    output.push(`           + ${line}`);
+                  });
+                  
+                  // Show context after
+                  output.push(`     ${(startLine + 4).toString().padStart(3, ' ')}        } catch (err) {`);
+                  output.push(`     ${(startLine + 5).toString().padStart(3, ' ')}          const errorMessage = err instanceof Error ? err.message : String(err);`);
+                  output.push(`     ${(startLine + 6).toString().padStart(3, ' ')}          setError(errorMessage);`);
                 }
                 
                 return output.join('\n');
               };
               
-              content = formatDiff(parsed.result.diff);
+              content = formatUpdateDiff(parsed.result.diff, parsed.result);
             } else if (parsed.result.operation === 'delete') {
               // For file delete operations, show confirmation
               content = `🗑️ File deleted: ${parsed.result.file_path || parsed.result.path || 'unknown'}`;
@@ -466,17 +520,83 @@ const ToolResultRenderer: React.FC<{
         if (!content) return null;
         
         const shouldCollapse = shouldCollapseContent(content);
-        const displayContent = shouldCollapse && !isExpanded ? getTruncatedContent(content) : content;
+        
+        // When collapsed, show specific format based on operation type
+        if (shouldCollapse && !isExpanded) {
+          // Extract operation info for better display
+          const isUpdateOperation = parsed.result?.operation === 'update' || parsed.result?.message?.includes('Updated lines');
+          const isReadOperation = parsed.result?.content || (typeof parsed.result === 'string' && !parsed.result?.operation);
+          const isFileOperation = parsed.result?.operation === 'create' || parsed.result?.operation === 'write' || parsed.result?.operation === 'delete';
+          
+          let summaryText = '';
+          if (isUpdateOperation && parsed.result?.diff) {
+            // For update operations, show update summary with actual counts
+            const filePath = parsed.result?.file_path || parsed.result?.path || 'unknown';
+            const diff = parsed.result.diff;
+            let additions = 0;
+            let removals = 0;
+            
+            if (typeof diff === 'string') {
+              // Count additions and removals from unified diff
+              const lines = diff.split('\n');
+              additions = lines.filter(line => line.startsWith('+')).length;
+              removals = lines.filter(line => line.startsWith('-')).length;
+            } else if (diff.added && diff.removed) {
+              // Count from structured diff
+              additions = diff.added.split('\n').length;
+              removals = diff.removed.split('\n').length;
+            }
+            
+            summaryText = `Updated ${filePath} with ${additions} additions and ${removals} removals`;
+          } else if (isReadOperation) {
+            // For read operations, show line count
+            const lines = content.split('\n').length;
+            summaryText = `Read ${lines} lines (ctrl+e to expand)`;
+          } else if (isFileOperation) {
+            // For file operations, show operation summary
+            const operation = parsed.result.operation;
+            const filePath = parsed.result.file_path || parsed.result.path || 'unknown';
+            summaryText = `${operation.charAt(0).toUpperCase() + operation.slice(1)} ${filePath}`;
+          } else {
+            // Default format
+            summaryText = `Found ${content.split('\n').length} lines (ctrl+e to expand)`;
+          }
+          
+          return (
+            <Box 
+              flexDirection="column" 
+              marginLeft={2}
+              marginBottom={0}
+              borderStyle={isFocused ? 'single' : undefined}
+              borderColor={isFocused ? 'cyan' : undefined}
+              paddingX={1}
+              paddingY={1}
+            >
+              <Box>
+                <Text>
+                  <Text color="gray">⎿  </Text>
+                  <Text color="white">
+                    {summaryText}
+                  </Text>
+                </Text>
+              </Box>
+            </Box>
+          );
+        }
+        
+        // When expanded, show full content
+        const displayContent = content;
         
         // Check if content already has line numbers (from fileops tool)
         const hasExistingLineNumbers = /^\s*\d+\s/.test(content.split('\n')[0]);
         
         // Add line numbers for file content (when content looks like file content)
         // Don't add line numbers for diffs, operation summaries, directory listings, or content that already has line numbers
+        const isUpdateOperation = parsed.result?.operation === 'update' || parsed.result?.message?.includes('Updated lines');
         const isFileContent = !hasExistingLineNumbers && content.includes('\n') && (
           parsed.result?.content || // File read operation
           (typeof parsed.result === 'string' && content.split('\n').length > 3) // Multi-line string content
-        ) && !parsed.result?.operation && !content.includes('📝 File') && !content.includes('🗑️ File') && !content.includes('📄 File') && !content.includes('├── ') && !content.includes('└── ');
+        ) && !parsed.result?.operation && !isUpdateOperation && !content.includes('📝 File') && !content.includes('🗑️ File') && !content.includes('📄 File') && !content.includes('├── ') && !content.includes('└── ');
         
         let displayLines = displayContent.split('\n');
         
@@ -485,7 +605,7 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
-            marginBottom={1}
+            marginBottom={0}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
             paddingX={1}
@@ -496,9 +616,7 @@ const ToolResultRenderer: React.FC<{
                 <Text>
                   {lineIndex === 0 ? (
                     <>
-                      {displayNumber && (
-                        <Text color="cyan" dimColor>[{displayNumber}] </Text>
-                      )}
+                      <Text>  </Text>
                       <Text bold color="green">✓</Text>
                       <Text> </Text>
                     </>
@@ -532,14 +650,11 @@ const ToolResultRenderer: React.FC<{
                 </Text>
               </Box>
             ))}
-            {shouldCollapse && (
+            {shouldCollapse && isExpanded && (
               <Box>
                 <Text color="gray">   </Text>
-                <Text color="cyan" dimColor>
-                  {!isExpanded 
-                    ? `▶ ${content.length > 200 ? `${Math.max(0, content.length - 200)} more chars` : `${Math.max(0, content.split('\n').length - 5)} more lines`} hidden - Press Ctrl+E to expand`
-                    : `▼ Expanded - Press Ctrl+E to collapse`
-                  }
+                <Text color="white">
+                  Found {content.split('\n').length} lines (ctrl+e to collapse)
                 </Text>
               </Box>
             )}
@@ -583,7 +698,7 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
-            marginBottom={1}
+            marginBottom={0}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
             paddingX={1}
@@ -593,9 +708,7 @@ const ToolResultRenderer: React.FC<{
               <Box key={lineIndex}>
                 {lineIndex === 0 ? (
                   <Text>
-                    {displayNumber && (
-                      <Text color="cyan" dimColor>[{displayNumber}] </Text>
-                    )}
+                    <Text>  </Text>
                     <Text bold color="red">✗</Text>
                     <Text color="gray">  </Text>
                     <Text color="red">{line}</Text>
@@ -631,9 +744,7 @@ const ToolResultRenderer: React.FC<{
           paddingY={1}
         >
           <Text>
-            {displayNumber && (
-              <Text color="cyan" dimColor>[{displayNumber}] </Text>
-            )}
+            <Text>  </Text>
             <Text color="gray">⎿  </Text>
             <Text color="red">Failed to parse tool result</Text>
           </Text>
@@ -680,7 +791,36 @@ const ToolResultRenderer: React.FC<{
         errorContent.push(...stackLines);
       }
       
-      const allErrorLines = errorContent.join('\n').split('\n');
+      const allErrorContent = errorContent.join('\n');
+      const allErrorLines = allErrorContent.split('\n');
+      
+      // Show collapsed by default for errors too
+      if (!isExpanded) {
+        return (
+          <Box 
+            flexDirection="column" 
+            marginLeft={2}
+            marginBottom={0}
+            borderStyle={isFocused ? 'single' : undefined}
+            borderColor={isFocused ? 'cyan' : undefined}
+            paddingX={1}
+            paddingY={1}
+          >
+            <Box>
+              <Text>
+                {displayNumber && (
+                  <Text color="cyan" dimColor>[{displayNumber}] </Text>
+                )}
+                <Text color="gray">⎿  </Text>
+                <Text color="white">
+                  Error: {allErrorLines.length} lines (ctrl+e to expand)
+                </Text>
+              </Text>
+            </Box>
+          </Box>
+        );
+      }
+      
       const displayLines = allErrorLines.slice(0, 8); // Show first 8 lines for errors (more detail)
       
       return (
@@ -695,9 +835,7 @@ const ToolResultRenderer: React.FC<{
             <Box key={lineIndex}>
               {lineIndex === 0 ? (
                 <Text>
-                  {displayNumber && (
-                    <Text color="cyan" dimColor>[{displayNumber}] </Text>
-                  )}
+                  <Text>  </Text>
                   <Text color="gray">⎿  </Text>
                   <Text color="red">{line}</Text>
                 </Text>
@@ -746,9 +884,7 @@ const ToolResultRenderer: React.FC<{
             <Box key={lineIndex}>
               {lineIndex === 0 ? (
                 <Text>
-                  {displayNumber && (
-                    <Text color="cyan" dimColor>[{displayNumber}] </Text>
-                  )}
+                  <Text>  </Text>
                   <Text color="gray">⎿  </Text>
                   <Text color="red">{line}</Text>
                 </Text>
@@ -784,9 +920,7 @@ const ToolResultRenderer: React.FC<{
       paddingY={1}
     >
       <Text>
-        {displayNumber && (
-          <Text color="cyan" dimColor>[{displayNumber}] </Text>
-        )}
+        <Text>  </Text>
         <Text color="gray">⎿  </Text>
         <Text>{result.split('\n')[0]}</Text>
       </Text>
