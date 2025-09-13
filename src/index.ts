@@ -258,8 +258,9 @@ const App: React.FC<AppProps> = ({ config }) => {
     setError(null);
 
     try {
-      const updatedContext = await agent.processMessage(message);
-      setContext(updatedContext);
+      await agent.processMessage(message);
+      // Context is already updated via real-time callback (line 243)
+      // No need for additional setContext call to avoid duplicates
       
       // Auto-compact disabled to preserve all messages for scrolling
       // setTimeout(checkAndAutoCompact, 100); // Small delay to ensure context is updated

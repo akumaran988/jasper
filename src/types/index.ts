@@ -72,5 +72,6 @@ export interface PermissionContext {
 export interface SlashCommand {
   name: string;
   description: string;
+  arguments?: string; // Optional arguments description
   handler: (...args: string[]) => Promise<void> | void;
 }

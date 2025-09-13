@@ -4,6 +4,7 @@ import { ConversationContext, PermissionContext, PermissionResponse, PermissionR
 import { permissionRegistry } from '../permissions/registry.js';
 import MessageRenderer from './renderer.js';
 import InputHandler from './input.js';
+import WelcomeMessage from './welcome.js';
 import { useAutoScroll } from '../hooks/useAutoScroll.js';
 import { getLogger } from '../utils/logger.js';
 
@@ -35,16 +36,31 @@ const Terminal: React.FC<TerminalProps> = ({
   const logger = useMemo(() => getLogger(), []);
   const [input, setInput] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
+  const [showWelcome, setShowWelcome] = useState(true);
   
   // Slash command states
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+
+  // Clear terminal on app startup (only once)
+  useEffect(() => {
+    // Clear the terminal screen once on startup
+    process.stdout.write('\x1b[2J\x1b[H');
+  }, []); // Empty dependency array means this runs only once on mount
+
+  // Hide welcome message when user starts interacting (has messages)
+  useEffect(() => {
+    if (context.messages.length > 0) {
+      setShowWelcome(false);
+    }
+  }, [context.messages.length]);
   
   // Define available slash commands (Claude Code-style)
   const slashCommands: SlashCommand[] = useMemo(() => [
     {
       name: 'add-dir',
       description: 'Add a new working directory',
+      arguments: '<path>',
       handler: () => {
         setInput('');
         setCursorPosition(0);
@@ -93,13 +109,15 @@ const Terminal: React.FC<TerminalProps> = ({
         setInput('');
         setCursorPosition(0);
         setShowCommandSuggestions(false);
+        setShowWelcome(true); // Show welcome message after clearing
         onClearConversation?.();
         logger.info('Conversation cleared');
       }
     },
     {
       name: 'compact',
-      description: 'Clear conversation history but keep a summary in context. Optional: /compact [instructions for summarization]',
+      description: 'Clear conversation history but keep a summary in context',
+      arguments: '[instructions]',
       handler: () => {
         setInput('');
         setCursorPosition(0);
@@ -564,6 +582,9 @@ const Terminal: React.FC<TerminalProps> = ({
           if (matchingCommands.length > 0) {
             const selectedCommand = matchingCommands[selectedCommandIndex] || matchingCommands[0];
             selectedCommand.handler();
+            // Close command suggestions after executing command
+            setShowCommandSuggestions(false);
+            setSelectedCommandIndex(0);
             return;
           }
         }
@@ -804,11 +825,15 @@ const Terminal: React.FC<TerminalProps> = ({
           setIsPastedContent(pasteBlocks.length > 1);
         } else {
           // Normal backspace
-          setInput(prev => {
-            const newInput = prev.slice(0, cursorPosition - 1) + prev.slice(cursorPosition);
-            return newInput;
-          });
+          const newInput = input.slice(0, cursorPosition - 1) + input.slice(cursorPosition);
+          setInput(newInput);
           setCursorPosition(prev => Math.max(0, prev - 1));
+          
+          // Close command suggestions if we're deleting the '/' or the input no longer starts with '/'
+          if (showCommandSuggestions && (!newInput.startsWith('/') || newInput.length === 0)) {
+            setShowCommandSuggestions(false);
+            setSelectedCommandIndex(0);
+          }
           
           // Update paste blocks positions after deletion
           setPasteBlocks(prev => prev.map(block => ({
@@ -930,35 +955,21 @@ const Terminal: React.FC<TerminalProps> = ({
       setCursorPosition(0);
       setIsPastedContent(false);
       setPasteBlocks([]);
+      
+      // Hide welcome message when user sends first message
+      if (showWelcome) {
+        setShowWelcome(false);
+      }
+      
       await onMessage(messageToSend);
     }
   }, [input, isProcessing, onMessage]);
 
   return (
     <Box flexDirection="column" minHeight={3}>
-      {/* Header - Claude Code style */}
-      {context.messages.length === 0 && (
-        <Box 
-          flexDirection="column" 
-          marginBottom={2} 
-          borderStyle="round" 
-          borderColor="gray" 
-          paddingX={2} 
-          paddingY={1}
-        >
-          <Text color="white" bold>
-            ❅ Welcome to Claude Code!
-          </Text>
-          <Text></Text>
-          <Text color="gray">
-            /help for help, /status for your current setup
-          </Text>
-          <Text></Text>
-          <Text color="gray">
-            cwd: {process.cwd()}
-          </Text>
-        </Box>
-      )}
+
+      {/* Welcome Message */}
+      {showWelcome && <WelcomeMessage />}
 
       {/* Messages */}
       <Box ref={messagesRef} flexDirection="column" flexGrow={1} justifyContent="flex-end">
@@ -998,11 +1009,13 @@ const Terminal: React.FC<TerminalProps> = ({
             }
           }
           
-          return visibleMessages.map((message, index) => {
+          return visibleMessages.map((message, _index) => {
             const originalIndex = context.messages.findIndex(m => m === message);
+            // Create a unique key using timestamp, role, and content hash to prevent duplicates
+            const messageKey = `${message.timestamp?.getTime() || Date.now()}-${message.role}-${originalIndex}-${message.content.slice(0, 50).replace(/\s/g, '')}`;
             return (
               <MessageRenderer 
-                key={`${originalIndex}-${index}`} 
+                key={messageKey} 
                 message={message} 
                 messages={context.messages} 
                 index={originalIndex}
@@ -1054,7 +1067,18 @@ const Terminal: React.FC<TerminalProps> = ({
         <CompactingIndicator />
       )}
 
-      {/* Slash command suggestions - Claude Code style */}
+      {/* Input - always show unless there's a permission prompt */}
+      {!pendingPermission && (
+        <InputHandler 
+          input={input} 
+          onInputChange={setInput} 
+          isPasted={isPastedContent} 
+          cursorPosition={displayCursorPosition}
+          pasteBlocks={pasteBlocks}
+        />
+      )}
+
+      {/* Slash command suggestions - positioned below input */}
       {showCommandSuggestions && input.startsWith('/') && (
         <Box flexDirection="column" width="100%" borderStyle="single" borderColor="gray" paddingX={1} marginBottom={1}>
           {(() => {
@@ -1066,7 +1090,7 @@ const Terminal: React.FC<TerminalProps> = ({
             return matchingCommands.map((cmd, index) => (
               <Box key={cmd.name} width="100%" justifyContent="space-between">
                 <Text color={index === selectedCommandIndex ? 'white' : 'gray'} backgroundColor={index === selectedCommandIndex ? 'blue' : undefined}>
-                  /{cmd.name} {index === selectedCommandIndex && cmd.name.includes(' ') ? '(alias)' : ''}
+                  /{cmd.name} {cmd.arguments ? cmd.arguments : ''}
                 </Text>
                 <Text color="gray">
                   {cmd.description}
@@ -1075,17 +1099,6 @@ const Terminal: React.FC<TerminalProps> = ({
             ));
           })()}
         </Box>
-      )}
-
-      {/* Input - always show unless there's a permission prompt */}
-      {!pendingPermission && (
-        <InputHandler 
-          input={input} 
-          onInputChange={setInput} 
-          isPasted={isPastedContent} 
-          cursorPosition={displayCursorPosition}
-          pasteBlocks={pasteBlocks}
-        />
       )}
 
       {/* Status bar at bottom */}
