@@ -101,10 +101,14 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
           return <Text key={index}>{token.text}</Text>;
         
         case 'strong':
-          return <Text key={index} bold>{token.text}</Text>;
+          // Handle nested tokens within bold text
+          const strongContent = token.tokens ? renderInlineTokens(token.tokens) : token.text;
+          return <Text key={index} bold>{strongContent}</Text>;
         
         case 'em':
-          return <Text key={index} italic>{token.text}</Text>;
+          // Handle nested tokens within italic text
+          const emContent = token.tokens ? renderInlineTokens(token.tokens) : token.text;
+          return <Text key={index} italic>{emContent}</Text>;
         
         case 'codespan':
           return (
@@ -121,9 +125,11 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
           );
         
         case 'del':
+          // Handle nested tokens within strikethrough text
+          const delContent = token.tokens ? renderInlineTokens(token.tokens) : token.text;
           return (
             <Text key={index} strikethrough>
-              {token.text}
+              {delContent}
             </Text>
           );
         

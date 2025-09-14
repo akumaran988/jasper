@@ -13,7 +13,7 @@ const WelcomeMessage: React.FC = () => {
           │                                                             │
         </Text>
         <Text bold color="cyan">
-          │  Welcome to <Text bold color="white">Jasper</Text> - Your AI Assistant            │
+          │  Welcome to <Text bold color="white">Jasper</Text> - Your AI Assistant             │
         </Text>
         <Text bold color="cyan">
           │                                                             │
@@ -46,8 +46,6 @@ const WelcomeMessage: React.FC = () => {
       <Box flexDirection="column" marginBottom={1}>
         <Text color="white" bold>⌨️  Navigation:</Text>
         <Text color="gray">  • <Text color="cyan">Page Up/Down</Text> - Scroll through messages</Text>
-        <Text color="gray">  • <Text color="cyan">Ctrl+E</Text> - Expand/collapse tool results</Text>
-        <Text color="gray">  • <Text color="cyan">Ctrl+R</Text> - Navigate between tool results</Text>
         <Text color="gray">  • <Text color="cyan">Ctrl+End</Text> - Jump to latest message</Text>
       </Box>
 

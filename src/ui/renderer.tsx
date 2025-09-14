@@ -139,7 +139,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     if (content && content.trim()) {
       const isError = content.includes('⚠️  AI response parsing error') || content.includes('⚠️  Could not parse AI response');
       renderParts.push(
-        <Box key="content" flexDirection="column" marginBottom={0}>
+        <Box key="content" flexDirection="column" marginBottom={1}>
           <Box flexDirection="column">
             <Box>
               <Text color={isError ? "red" : "white"}>⏺ </Text>
@@ -203,7 +203,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
         }
 
         renderParts.push(
-          <Box key={`tool-${toolIndex}`} flexDirection="column" marginBottom={0}>
+          <Box key={`tool-${toolIndex}`} flexDirection="column" marginBottom={1}>
             <Text>
               <Text color="blue">⏺</Text> <Text bold color="white">{displayName}</Text>({paramDisplay})
             </Text>
@@ -211,9 +211,9 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
               <ToolResultRenderer 
                 result={toolResult}
                 displayNumber={toolIndex + 1}
-                isExpanded={expandedToolResults?.has(`${index}-${toolIndex}`) || false}
-                isFocused={focusedToolResult === `${index}-${toolIndex}`}
-                onToggle={onToggleExpansion ? () => onToggleExpansion(`${index}-${toolIndex}`) : undefined}
+                isExpanded={true}
+                isFocused={false}
+                onToggle={undefined}
               />
             )}
           </Box>
@@ -222,7 +222,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     }
 
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" marginBottom={1}>
         {renderParts}
       </Box>
     );
