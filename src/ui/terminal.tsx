@@ -42,18 +42,26 @@ const Terminal: React.FC<TerminalProps> = ({
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 
-  // Clear terminal on app startup (only once)
+  // Clear terminal and conversation on app startup (only once)
   useEffect(() => {
     // Clear the terminal screen once on startup
     process.stdout.write('\x1b[2J\x1b[H');
-  }, []); // Empty dependency array means this runs only once on mount
+    
+    // Call the /clear command functionality on startup to show welcome message
+    if (onClearConversation) {
+      onClearConversation();
+    }
+    setShowWelcome(true);
+  }, [onClearConversation]); // Include onClearConversation in dependencies to ensure it's available
 
-  // Hide welcome message when user starts interacting (has messages)
+  // Hide welcome message when user starts interacting (has non-system messages)
   useEffect(() => {
-    if (context.messages.length > 0) {
+    // Only hide welcome if there are user or assistant messages, not just system messages
+    const nonSystemMessages = context.messages.filter(msg => msg.role !== 'system' || msg.content.startsWith('Tool execution results:'));
+    if (nonSystemMessages.length > 0) {
       setShowWelcome(false);
     }
-  }, [context.messages.length]);
+  }, [context.messages]);
   
   // Define available slash commands (Claude Code-style)
   const slashCommands: SlashCommand[] = useMemo(() => [
