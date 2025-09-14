@@ -139,7 +139,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     if (content && content.trim()) {
       const isError = content.includes('⚠️  AI response parsing error') || content.includes('⚠️  Could not parse AI response');
       renderParts.push(
-        <Box key="content" flexDirection="column" marginBottom={1}>
+        <Box key="content" flexDirection="column" marginBottom={0}>
           <Box flexDirection="column">
             <Box>
               <Text color={isError ? "red" : "white"}>⏺ </Text>
@@ -203,7 +203,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
         }
 
         renderParts.push(
-          <Box key={`tool-${toolIndex}`} flexDirection="column" marginBottom={1}>
+          <Box key={`tool-${toolIndex}`} flexDirection="column" marginBottom={0}>
             <Text>
               <Text color="blue">⏺</Text> <Text bold color="white">{displayName}</Text>({paramDisplay})
             </Text>
@@ -567,7 +567,7 @@ const ToolResultRenderer: React.FC<{
             <Box 
               flexDirection="column" 
               marginLeft={2}
-              marginBottom={0}
+              marginBottom={1}
               borderStyle={isFocused ? 'single' : undefined}
               borderColor={isFocused ? 'cyan' : undefined}
               paddingX={1}
@@ -606,7 +606,7 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
-            marginBottom={0}
+            marginBottom={1}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
             paddingX={1}
@@ -699,7 +699,7 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
-            marginBottom={0}
+            marginBottom={1}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
             paddingX={1}
@@ -801,7 +801,7 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
-            marginBottom={0}
+            marginBottom={1}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
             paddingX={1}

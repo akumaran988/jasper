@@ -14,7 +14,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
     switch (token.type) {
       case 'paragraph':
         return (
-          <Box key={index} flexDirection="column" marginBottom={1}>
+          <Box key={index} flexDirection="column" marginBottom={0}>
             <Text>{renderInlineTokens(token.tokens)}</Text>
           </Box>
         );
