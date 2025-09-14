@@ -4,15 +4,16 @@ import { Message } from '../types/index.js';
 import MarkdownRenderer from './markdown.js';
 import { displayRegistry } from '../display/registry.js';
 import { DisplayContext } from '../display/types.js';
+import { getLogger } from '../utils/logger.js';
 
 interface MessageRendererProps {
   message: Message;
   messages: Message[];
   index: number;
   expandedToolResults?: Set<string>;
-  focusedToolResult?: string | null;
-  onToggleExpansion?: (resultKey: string) => void;
-  onFocusToolResult?: (resultKey: string) => void;
+  focusedToolResult?: string;
+  onToggleExpansion?: (key: string) => void;
+  onFocusToolResult?: (key: string) => void;
   toolResultPage?: number;
 }
 
@@ -26,6 +27,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
   onFocusToolResult,
   toolResultPage = 0
 }) => {
+  const logger = getLogger();
   const renderUserMessage = () => {
     // Split user message into lines to preserve multi-line formatting
     const userLines = message.content.split(/\r\n|\r|\n/);
@@ -155,46 +157,22 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     // Tool calls with corresponding results (grouped together)
     if (toolCalls && toolCalls.length > 0) {
       toolCalls.forEach((call, toolIndex) => {
-        // Format parameters cleanly - show only the main parameter (usually file_path)
+        // Format parameters to show all parameters
         let paramDisplay = '';
         const params = call.parameters || {};
         
-        // For file operations, show only the file path
-        if (params.file_path) {
-          paramDisplay = params.file_path;
-        } else if (params.path) {
-          paramDisplay = params.path;
-        } else if (params.pattern && call.name.toLowerCase().includes('search')) {
-          // For search operations, show the pattern
-          paramDisplay = `pattern: "${params.pattern}"`;
-          if (params.output_mode) {
-            paramDisplay += `, output_mode: "${params.output_mode}"`;
-          }
-        } else if (params.command && call.name.toLowerCase().includes('bash')) {
-          // For bash operations, show the command
-          paramDisplay = params.command.length > 50 ? `${params.command.substring(0, 47)}...` : params.command;
-        } else {
-          // Fallback to original format for other tools
-          paramDisplay = Object.entries(params)
-            .map(([k, v]) => {
-              if (typeof v === 'string' && v.length > 50) {
-                return `${k}="${v.substring(0, 47)}..."`;
-              }
-              return `${k}=${JSON.stringify(v)}`;
-            })
-            .join(', ');
-        }
+        // Always show all parameters
+        paramDisplay = Object.entries(params)
+          .map(([k, v]) => {
+            if (typeof v === 'string' && v.length > 50) {
+              return `${k}="${v.substring(0, 47)}..."`;
+            }
+            return `${k}=${JSON.stringify(v)}`;
+          })
+          .join(', ');
         
-        // Find the corresponding tool result in the next system message
-        let toolResult = null;
-        if (index + 1 < messages.length && messages[index + 1].role === 'system' && 
-            messages[index + 1].content.startsWith('Tool execution results:')) {
-          const resultsContent = messages[index + 1].content.replace('Tool execution results:\n', '');
-          const allResults = resultsContent.split('\n\n');
-          
-          // Find the result that matches this tool call ID
-          toolResult = allResults.find(result => result.includes(call.id));
-        }
+        // Tool results will be displayed separately when they appear as system messages
+        // No need to search for them here since they don't exist yet when tool call is displayed
         
         // Format tool name for display (e.g., "Edit" -> "Update" for file updates)
         let displayName = call.name;
@@ -207,15 +185,6 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
             <Text>
               <Text color="blue">⏺</Text> <Text bold color="white">{displayName}</Text>({paramDisplay})
             </Text>
-            {toolResult && (
-              <ToolResultRenderer 
-                result={toolResult}
-                displayNumber={toolIndex + 1}
-                isExpanded={true}
-                isFocused={false}
-                onToggle={undefined}
-              />
-            )}
           </Box>
         );
       });
@@ -231,19 +200,6 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
   const renderSystemMessage = () => {
     // Handle tool results exactly like Claude Code
     if (message.content.startsWith('Tool execution results:')) {
-      // Check if this tool result message immediately follows an assistant message with tool calls
-      // If so, skip rendering it here as it's already rendered with the tool calls
-      if (index > 0 && messages[index - 1].role === 'assistant') {
-        try {
-          const prevMessage = JSON.parse(messages[index - 1].content);
-          if (prevMessage.tool_calls && prevMessage.tool_calls.length > 0) {
-            // Skip rendering - this is handled by the assistant message renderer
-            return null;
-          }
-        } catch {
-          // If parsing fails, continue with normal rendering
-        }
-      }
       
       const results = message.content.replace('Tool execution results:\n', '');
       
@@ -529,6 +485,10 @@ const ToolResultRenderer: React.FC<{
           const isReadOperation = parsed.result?.content || (typeof parsed.result === 'string' && !parsed.result?.operation);
           const isFileOperation = parsed.result?.operation === 'create' || parsed.result?.operation === 'write' || parsed.result?.operation === 'delete';
           
+          // Extract execution time for display
+          const executionTime = parsed.result?.executionTime || parsed.executionTime;
+          const timingText = executionTime ? ` (${executionTime} ms)` : '';
+          
           let summaryText = '';
           if (isUpdateOperation && parsed.result?.diff) {
             // For update operations, show update summary with actual counts
@@ -548,19 +508,19 @@ const ToolResultRenderer: React.FC<{
               removals = diff.removed.split('\n').length;
             }
             
-            summaryText = `Updated ${filePath} with ${additions} additions and ${removals} removals`;
+            summaryText = `Updated ${filePath} with ${additions} additions and ${removals} removals${timingText}`;
           } else if (isReadOperation) {
             // For read operations, show line count
             const lines = content.split('\n').length;
-            summaryText = `Read ${lines} lines (ctrl+e to expand)`;
+            summaryText = `Read ${lines} lines${timingText}`;
           } else if (isFileOperation) {
             // For file operations, show operation summary
             const operation = parsed.result.operation;
             const filePath = parsed.result.file_path || parsed.result.path || 'unknown';
-            summaryText = `${operation.charAt(0).toUpperCase() + operation.slice(1)} ${filePath}`;
+            summaryText = `${operation.charAt(0).toUpperCase() + operation.slice(1)} ${filePath}${timingText}`;
           } else {
             // Default format
-            summaryText = `Found ${content.split('\n').length} lines (ctrl+e to expand)`;
+            summaryText = `Found ${content.split('\n').length} lines${timingText}`;
           }
           
           return (
@@ -797,6 +757,10 @@ const ToolResultRenderer: React.FC<{
       
       // Show collapsed by default for errors too
       if (!isExpanded) {
+        // Extract execution time for error display
+        const executionTime = parsed.executionTime;
+        const timingText = executionTime ? ` (${executionTime} ms)` : '';
+        
         return (
           <Box 
             flexDirection="column" 
@@ -814,7 +778,7 @@ const ToolResultRenderer: React.FC<{
                 )}
                 <Text color="gray">⎿  </Text>
                 <Text color="white">
-                  Error: {allErrorLines.length} lines (ctrl+e to expand)
+                  Error: {allErrorLines.length} lines{timingText}
                 </Text>
               </Text>
             </Box>

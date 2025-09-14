@@ -32,19 +32,28 @@ export class ToolRegistry {
     }
 
     try {
+      const startTime = Date.now();
       const result = await tool.execute(toolCall.parameters);
+      const endTime = Date.now();
+      const executionTime = endTime - startTime;
       
       return {
         id: toolCall.id,
         success: true,
-        result
+        result,
+        executionTime
       };
     } catch (error) {
+      const startTime = Date.now();
+      const endTime = Date.now();
+      const executionTime = endTime - startTime;
+      
       return {
         id: toolCall.id,
         success: false,
         result: null,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
+        executionTime
       };
     }
   }

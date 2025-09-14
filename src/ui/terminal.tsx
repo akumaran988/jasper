@@ -20,6 +20,9 @@ interface TerminalProps {
   onCompactConversation?: () => void;
 }
 
+// Add component instance counter to track if multiple instances are created
+let terminalInstanceCount = 0;
+
 const Terminal: React.FC<TerminalProps> = ({ 
   context, 
   onMessage, 
@@ -31,12 +34,48 @@ const Terminal: React.FC<TerminalProps> = ({
   onClearConversation,
   onCompactConversation
 }) => {
+  // Track Terminal component instances
+  const instanceId = useMemo(() => {
+    terminalInstanceCount++;
+    const id = `terminal-${terminalInstanceCount}`;
+    const logger = getLogger();
+    logger.error(`🏗️ Terminal instance created: ${id}`);
+    return id;
+  }, []);
+
+  // Track component cleanup
+  useEffect(() => {
+    const logger = getLogger();
+    return () => {
+      logger.error(`🗑️ Terminal instance destroyed: ${instanceId}`);
+    };
+  }, [instanceId]);
+
+  // Track when welcome message and input are rendered (only log on actual visibility changes)
+  const wasShowingWelcome = useRef(context.messages.length === 0);
+  const wasShowingInput = useRef(!pendingPermission);
+  
+  useEffect(() => {
+    const showingWelcome = context.messages.length === 0;
+    const showingInput = !pendingPermission;
+    const logger = getLogger();
+    
+    if (showingWelcome !== wasShowingWelcome.current) {
+      logger.error(`${instanceId}: Welcome message ${showingWelcome ? 'SHOWN' : 'HIDDEN'}`);
+      wasShowingWelcome.current = showingWelcome;
+    }
+    
+    if (showingInput !== wasShowingInput.current) {
+      logger.error(`${instanceId}: Input handler ${showingInput ? 'SHOWN' : 'HIDDEN'}`);
+      wasShowingInput.current = showingInput;
+    }
+  }, [context.messages.length, pendingPermission, instanceId]);
   const { exit } = useApp();
   const { stdout } = useStdout();
   const logger = useMemo(() => getLogger(), []);
   const [input, setInput] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
-  const [showWelcome, setShowWelcome] = useState(true);
+  // Removed showWelcome state - now using context.messages.length === 0 directly
   
   // Slash command states
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
@@ -51,17 +90,9 @@ const Terminal: React.FC<TerminalProps> = ({
     if (onClearConversation) {
       onClearConversation();
     }
-    setShowWelcome(true);
   }, [onClearConversation]); // Include onClearConversation in dependencies to ensure it's available
 
-  // Hide welcome message when user starts interacting (has non-system messages)
-  useEffect(() => {
-    // Only hide welcome if there are user or assistant messages, not just system messages
-    const nonSystemMessages = context.messages.filter(msg => msg.role !== 'system' || msg.content.startsWith('Tool execution results:'));
-    if (nonSystemMessages.length > 0) {
-      setShowWelcome(false);
-    }
-  }, [context.messages]);
+  // Welcome message is now controlled directly by context.messages.length === 0
   
   // Define available slash commands (Claude Code-style)
   const slashCommands: SlashCommand[] = useMemo(() => [
@@ -117,7 +148,7 @@ const Terminal: React.FC<TerminalProps> = ({
         setInput('');
         setCursorPosition(0);
         setShowCommandSuggestions(false);
-        setShowWelcome(true); // Show welcome message after clearing
+        // Welcome message will show automatically when context.messages.length === 0
         onClearConversation?.();
         logger.info('Conversation cleared');
       }
@@ -231,16 +262,17 @@ const Terminal: React.FC<TerminalProps> = ({
   //   }
   // }, [context.messages.length, focusedToolResult, logger]);
   
-  // Add logging for scroll offset changes
+  // Add logging for scroll state changes
   useEffect(() => {
-    logger.warn('📜 USER SCROLL OFFSET CHANGED', {
-      userScrollOffset,
+    logger.debug('📜 SCROLL STATE CHANGED', {
       isAutoScrollEnabled: scrollState.isAutoScrollEnabled,
       isProcessing,
       hasPendingPermission: !!pendingPermission,
       messageCount: context.messages.length
     });
-  }, [userScrollOffset, scrollState.isAutoScrollEnabled, isProcessing, pendingPermission, context.messages.length, logger]);
+  }, [scrollState.isAutoScrollEnabled, isProcessing, pendingPermission, context.messages.length, logger]);
+
+  // Let Ink handle window resize naturally without manual intervention
 
   // Animation for processing indicator - DISABLED to fix mouse scroll issues
   // The 100ms re-renders were interfering with mouse scroll position
@@ -815,75 +847,45 @@ const Terminal: React.FC<TerminalProps> = ({
       setIsPastedContent(false);
       setPasteBlocks([]);
       
-      // Hide welcome message when user sends first message
-      if (showWelcome) {
-        setShowWelcome(false);
-        // Force scroll to bottom after hiding welcome message
-        setTimeout(() => scrollControls.scrollToBottom(), 100);
-      }
+      // Force scroll to bottom after sending message
+      setTimeout(() => scrollControls.scrollToBottom(), 100);
       
       await onMessage(messageToSend);
     }
-  }, [input, isProcessing, onMessage, showWelcome, scrollControls]);
+  }, [input, isProcessing, onMessage, scrollControls]);
 
   return (
     <Box flexDirection="column" height="100%">
 
       {/* Welcome Message - only show when no conversation */}
-      {showWelcome && context.messages.length === 0 && (
+      {context.messages.length === 0 && (
         <Box marginTop={1}>
           <WelcomeMessage />
         </Box>
       )}
 
       {/* Messages */}
-      <Box ref={messagesRef} flexDirection="column" flexGrow={1} justifyContent="flex-end" paddingTop={showWelcome ? 0 : 3}>
+      <Box ref={messagesRef} flexDirection="column" flexGrow={1} paddingTop={context.messages.length === 0 ? 0 : 3}>
         {(() => {
           const filteredMessages = context.messages.filter(m => 
             m.role !== 'system' || m.content.startsWith('Tool execution results:')
           );
           
-          // ALWAYS show ALL messages - no truncation for message persistence
-          // The terminal scroll functionality should handle display, not message filtering
-          let visibleMessages = filteredMessages;
+          // Simplified approach: always show all messages
+          // Let Ink/terminal handle scrolling and viewport management
+          // This prevents duplication issues during resize events
           
-          // Handle manual scrolling by showing messages from the scroll offset
-          if (!scrollState.isAutoScrollEnabled && userScrollOffset > 0) {
-            // When manually scrolling, show messages starting from the offset
-            // But don't limit the total number - let terminal scrolling handle overflow
-            const startIndex = Math.max(0, userScrollOffset);
-            visibleMessages = filteredMessages.slice(startIndex);
+          return filteredMessages.map((message, index) => {
+            // Use stable, unique keys for consistent rendering
+            const contentHash = message.content.length.toString(36) + message.role.charAt(0);
+            const messageKey = `msg-${index}-${message.timestamp?.getTime() || 0}-${contentHash}`;
             
-            logger.debug('Manual scroll: showing messages from offset', {
-              totalMessages: filteredMessages.length,
-              startIndex,
-              userScrollOffset,
-              showingCount: visibleMessages.length,
-              autoScrollEnabled: scrollState.isAutoScrollEnabled
-            });
-          } else {
-            // Auto-scroll enabled - show ALL messages (no truncation)
-            visibleMessages = filteredMessages;
-            
-            // Only log occasionally to prevent spam
-            if (filteredMessages.length % 10 === 0) {
-              logger.debug('Auto-scroll: showing all messages', {
-                totalMessages: filteredMessages.length,
-                showingAllMessages: true
-              });
-            }
-          }
-          
-          return visibleMessages.map((message, _index) => {
-            const originalIndex = context.messages.findIndex(m => m === message);
-            // Create a unique key using timestamp, role, and content hash to prevent duplicates
-            const messageKey = `${message.timestamp?.getTime() || Date.now()}-${message.role}-${originalIndex}-${message.content.slice(0, 50).replace(/\s/g, '')}`;
             return (
               <MessageRenderer 
                 key={messageKey} 
                 message={message} 
                 messages={context.messages} 
-                index={originalIndex}
+                index={index}
               />
             );
           });

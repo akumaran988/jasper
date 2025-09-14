@@ -69,6 +69,9 @@ ${this.context.tools.map(tool => {
 }).join('\n\n')}
 
 Response Format (STRICTLY REQUIRED):
+CRITICAL: You MUST respond with ONLY valid JSON. Do not include any text before or after the JSON. Do not include "ASSISTANT:" or any other prefixes.
+
+Your response must be a single valid JSON object with this exact structure:
 {
   "content": "Your response to user (explain what you're doing/planning)",
   "tool_calls": [
@@ -83,6 +86,8 @@ Response Format (STRICTLY REQUIRED):
 }
 
 IMPORTANT RULES:
+- Start your response directly with { and end with }
+- No "ASSISTANT:" prefix, no markdown code blocks, no additional text
 - ALWAYS use should_continue correctly to control conversation flow
 - Be explicit about what you're doing and why
 - User must approve tools - explain what each tool will do
@@ -173,8 +178,12 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
       
       if (result.success) {
         // Always format results as JSON for consistent parsing in the renderer
-        const jsonResult = JSON.stringify(result.result, null, 2);
-        return `Tool ${result.id} (${toolName}) succeeded:\n${jsonResult}`;
+        const resultWithTiming = {
+          ...result.result,
+          executionTime: result.executionTime
+        };
+        const jsonResult = JSON.stringify(resultWithTiming, null, 2);
+        return `🔧 ${toolName} succeeded:\n${jsonResult}`;
       } else {
         // For failed results, also format as JSON for consistent parsing
         const errorResult = {
@@ -183,10 +192,11 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
           stderr: result.result?.stderr || '',
           command: result.result?.command || '',
           exitCode: result.result?.exitCode || 1,
-          stack: result.result?.stack || ''
+          stack: result.result?.stack || '',
+          executionTime: result.executionTime
         };
         const jsonResult = JSON.stringify(errorResult, null, 2);
-        return `Tool ${result.id} (${toolName}) failed:\n${jsonResult}`;
+        return `🔧 ${toolName} failed:\n${jsonResult}`;
       }
     }).join('\n\n');
 
@@ -249,6 +259,10 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
         // Execute tool calls sequentially with individual messages
         if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
           for (const toolCall of aiResponse.tool_calls) {
+            // Ensure every tool call has a unique ID
+            if (!toolCall.id) {
+              toolCall.id = `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            }
             // Add individual tool call message
             const toolCallMessage = {
               content: "",

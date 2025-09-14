@@ -93,7 +93,9 @@ export class GeminiProvider implements LLMProvider {
 Available tools:
 ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
 
-Respond in JSON format with the following structure:
+CRITICAL: You MUST respond with ONLY valid JSON. Do not include any text before or after the JSON. Do not include "ASSISTANT:" or any other prefixes.
+
+Your response must be a single valid JSON object with this exact structure:
 {
   "content": "Your response to the user",
   "tool_calls": [
@@ -106,6 +108,13 @@ Respond in JSON format with the following structure:
   "should_continue": true/false,
   "reasoning": "Your reasoning for the actions taken"
 }
+
+IMPORTANT: 
+- Start your response directly with { and end with }
+- No "ASSISTANT:" prefix
+- No markdown code blocks
+- No additional text
+- Just pure JSON
 
 Conversation history:
 `;

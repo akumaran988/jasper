@@ -15,6 +15,7 @@ export interface ToolResult {
   success: boolean;
   result: any;
   error?: string;
+  executionTime?: number;
 }
 
 export interface AIResponse {
