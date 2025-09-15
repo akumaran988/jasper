@@ -12,8 +12,6 @@ interface InputHandlerProps {
 const InputHandler: React.FC<InputHandlerProps> = ({ input, isPasted = false, cursorPosition = 0, pasteBlocks = [] }) => {
   const { stdout } = useStdout();
   const terminalWidth = stdout?.columns || 80;
-  const borderWidth = Math.max(20, Math.min(terminalWidth - 4, terminalWidth * 0.95)); // Responsive to terminal width
-  const borderLine = '─'.repeat(Math.floor(borderWidth));
   
   
   const inputLines = input.split(/\r\n|\r|\n/);
@@ -67,9 +65,9 @@ const InputHandler: React.FC<InputHandlerProps> = ({ input, isPasted = false, cu
   const visibleLines = displayLines; // Show all lines, no truncation
   
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column" marginTop={1} width="100%">
       {/* Input box with border */}
-      <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
+      <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column" width="100%">
         {displayContent ? (
           visibleLines.map((line, index) => {
             const actualLineIndex = startLine + index;

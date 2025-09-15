@@ -7,6 +7,8 @@ export interface AutoScrollConfig {
   disableOnManualScroll?: boolean;
   scrollSensitivity?: number; // pixels from bottom to consider "at bottom"
   debugLogging?: boolean;
+  constrainHeight?: boolean; // gemini-cli pattern
+  availableHeight?: number; // gemini-cli pattern
 }
 
 export interface AutoScrollState {
@@ -15,6 +17,8 @@ export interface AutoScrollState {
   isAtBottom: boolean;
   messageCount: number;
   lastScrollTime: number;
+  viewportHeight?: number; // gemini-cli pattern
+  scrollOffset: number; // gemini-cli pattern
 }
 
 export interface AutoScrollControls {
@@ -23,6 +27,9 @@ export interface AutoScrollControls {
   disableAutoScroll: () => void;
   toggleAutoScroll: () => void;
   resetScrollState: () => void;
+  setScrollOffset: (offset: number) => void; // gemini-cli pattern
+  scrollUp: (amount?: number) => void; // gemini-cli pattern
+  scrollDown: (amount?: number) => void; // gemini-cli pattern
 }
 
 export function useAutoScroll(
@@ -33,12 +40,14 @@ export function useAutoScroll(
 ): [AutoScrollState, AutoScrollControls] {
   const logger = useMemo(() => getLogger(), []);
   
-  const defaultConfig: Required<AutoScrollConfig> = {
+  const defaultConfig = {
     enabled: true,
     scrollToBottomOnUpdate: true,
     disableOnManualScroll: true,
     scrollSensitivity: 100,
     debugLogging: true,
+    constrainHeight: true,
+    availableHeight: undefined,
     ...config
   };
 
@@ -47,7 +56,9 @@ export function useAutoScroll(
     isUserScrolling: false,
     isAtBottom: true,
     messageCount: messagesLength,
-    lastScrollTime: Date.now()
+    lastScrollTime: Date.now(),
+    viewportHeight: defaultConfig.availableHeight,
+    scrollOffset: 0
   });
 
   // Track previous values to detect changes
@@ -115,9 +126,56 @@ export function useAutoScroll(
       ...prev,
       isUserScrolling: false,
       isAtBottom: true,
-      isAutoScrollEnabled: defaultConfig.enabled
+      isAutoScrollEnabled: defaultConfig.enabled,
+      scrollOffset: 0
     }));
   }, [defaultConfig.debugLogging, defaultConfig.enabled]);
+
+  // Enhanced scroll controls (gemini-cli pattern)
+  const setScrollOffset = useCallback((offset: number) => {
+    if (defaultConfig.debugLogging) {
+      logger.debug(`AutoScroll: Setting scroll offset to ${offset}`);
+    }
+    setState(prev => ({
+      ...prev,
+      scrollOffset: offset,
+      isAtBottom: offset === 0,
+      isUserScrolling: offset !== 0
+    }));
+  }, [defaultConfig.debugLogging]);
+
+  const scrollUp = useCallback((amount: number = 5) => {
+    setState(prev => {
+      const newOffset = Math.max(0, prev.scrollOffset - amount);
+      if (defaultConfig.debugLogging) {
+        logger.debug(`AutoScroll: Scrolling up by ${amount}, new offset: ${newOffset}`);
+      }
+      return {
+        ...prev,
+        scrollOffset: newOffset,
+        isAtBottom: newOffset === 0,
+        isUserScrolling: true,
+        isAutoScrollEnabled: newOffset === 0 // Re-enable if we reach top
+      };
+    });
+  }, [defaultConfig.debugLogging]);
+
+  const scrollDown = useCallback((amount: number = 5) => {
+    setState(prev => {
+      const maxScroll = Math.max(0, messagesLength - (defaultConfig.availableHeight || 10));
+      const newOffset = Math.min(maxScroll, prev.scrollOffset + amount);
+      if (defaultConfig.debugLogging) {
+        logger.debug(`AutoScroll: Scrolling down by ${amount}, new offset: ${newOffset}, max: ${maxScroll}`);
+      }
+      return {
+        ...prev,
+        scrollOffset: newOffset,
+        isAtBottom: newOffset >= maxScroll,
+        isAutoScrollEnabled: newOffset >= maxScroll, // Re-enable if we reach bottom
+        isUserScrolling: newOffset < maxScroll
+      };
+    });
+  }, [messagesLength, defaultConfig.availableHeight, defaultConfig.debugLogging]);
 
   // Handle auto-scroll when messages change
   useEffect(() => {
@@ -238,8 +296,11 @@ export function useAutoScroll(
     enableAutoScroll,
     disableAutoScroll,
     toggleAutoScroll,
-    resetScrollState
-  }), [scrollToBottom, enableAutoScroll, disableAutoScroll, toggleAutoScroll, resetScrollState]);
+    resetScrollState,
+    setScrollOffset,
+    scrollUp,
+    scrollDown
+  }), [scrollToBottom, enableAutoScroll, disableAutoScroll, toggleAutoScroll, resetScrollState, setScrollOffset, scrollUp, scrollDown]);
 
   return [state, controls];
 }

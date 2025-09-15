@@ -15,6 +15,12 @@ interface MessageRendererProps {
   onToggleExpansion?: (key: string) => void;
   onFocusToolResult?: (key: string) => void;
   toolResultPage?: number;
+  // Gemini-CLI props
+  terminalWidth?: number;
+  availableTerminalHeight?: number;
+  isPending?: boolean;
+  isFocused?: boolean;
+  isStreaming?: boolean;
 }
 
 const MessageRenderer: React.FC<MessageRendererProps> = ({ 
@@ -33,7 +39,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     const userLines = message.content.split(/\r\n|\r|\n/);
     
     return (
-      <Box flexDirection="column" marginBottom={1}>
+      <Box flexDirection="column" marginY={1}>
         {userLines.map((line, index) => (
           <Box key={index}>
             <Text color="white">
@@ -140,8 +146,10 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     // Main content with Claude Code-style bullet (white bullet for AI responses, red for errors)
     if (content && content.trim()) {
       const isError = content.includes('⚠️  AI response parsing error') || content.includes('⚠️  Could not parse AI response');
+      const hasToolCalls = toolCalls && toolCalls.length > 0;
+      
       renderParts.push(
-        <Box key="content" flexDirection="column" marginBottom={0}>
+        <Box key="content" flexDirection="column" marginBottom={hasToolCalls ? 1 : 0}>
           <Box flexDirection="column">
             <Box>
               <Text color={isError ? "red" : "white"}>⏺ </Text>
@@ -156,6 +164,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
 
     // Tool calls with corresponding results (grouped together)
     if (toolCalls && toolCalls.length > 0) {
+      
       toolCalls.forEach((call, toolIndex) => {
         // Format parameters to show all parameters
         let paramDisplay = '';
@@ -181,7 +190,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
         }
 
         renderParts.push(
-          <Box key={`tool-${toolIndex}`} flexDirection="column" marginBottom={0}>
+          <Box key={`tool-${toolIndex}`} flexDirection="column">
             <Text>
               <Text color="blue">⏺</Text> <Text bold color="white">{displayName}</Text>({paramDisplay})
             </Text>
@@ -191,7 +200,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     }
 
     return (
-      <Box flexDirection="column" marginBottom={1}>
+      <Box flexDirection="column">
         {renderParts}
       </Box>
     );
@@ -207,7 +216,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
       const toolResults = results.split('\n\n');
       
       return (
-        <Box flexDirection="column" marginBottom={0}>
+        <Box flexDirection="column">
           {toolResults.map((result, resultIndex) => {
             const resultKey = `${index}-${resultIndex}`;
             
@@ -527,7 +536,6 @@ const ToolResultRenderer: React.FC<{
             <Box 
               flexDirection="column" 
               marginLeft={2}
-              marginBottom={1}
               borderStyle={isFocused ? 'single' : undefined}
               borderColor={isFocused ? 'cyan' : undefined}
               paddingX={1}
@@ -566,7 +574,6 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
-            marginBottom={1}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
             paddingX={1}
@@ -659,7 +666,6 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
-            marginBottom={1}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
             paddingX={1}
@@ -698,7 +704,6 @@ const ToolResultRenderer: React.FC<{
       return (
         <Box 
           marginLeft={2}
-          marginBottom={1}
           borderStyle={isFocused ? 'single' : undefined}
           borderColor={isFocused ? 'cyan' : undefined}
           paddingX={1}
@@ -765,7 +770,6 @@ const ToolResultRenderer: React.FC<{
           <Box 
             flexDirection="column" 
             marginLeft={2}
-            marginBottom={1}
             borderStyle={isFocused ? 'single' : undefined}
             borderColor={isFocused ? 'cyan' : undefined}
             paddingX={1}
@@ -878,7 +882,6 @@ const ToolResultRenderer: React.FC<{
   return (
     <Box 
       marginLeft={2}
-      marginBottom={1}
       borderStyle={isFocused ? 'single' : undefined}
       borderColor={isFocused ? 'cyan' : undefined}
       paddingX={1}

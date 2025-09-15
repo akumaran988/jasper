@@ -170,7 +170,7 @@ const App: React.FC<AppProps> = ({ config }) => {
     
     if (permissionResult.allowed) {
       if (permissionResult.reason) {
-        console.log(`✅ ${permissionResult.reason}`);
+        console.log(`${permissionResult.reason}`);
       }
       return true;
     }
