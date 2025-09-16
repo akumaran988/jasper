@@ -39,7 +39,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     const userLines = message.content.split(/\r\n|\r|\n/);
     
     return (
-      <Box flexDirection="column" marginY={1}>
+      <Box flexDirection="column">
         {userLines.map((line, index) => (
           <Box key={index}>
             <Text color="white">
@@ -146,10 +146,9 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
     // Main content with Claude Code-style bullet (white bullet for AI responses, red for errors)
     if (content && content.trim()) {
       const isError = content.includes('⚠️  AI response parsing error') || content.includes('⚠️  Could not parse AI response');
-      const hasToolCalls = toolCalls && toolCalls.length > 0;
       
       renderParts.push(
-        <Box key="content" flexDirection="column" marginBottom={hasToolCalls ? 1 : 0}>
+        <Box key="content" flexDirection="column">
           <Box flexDirection="column">
             <Box>
               <Text color={isError ? "red" : "white"}>⏺ </Text>
@@ -164,7 +163,6 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
 
     // Tool calls with corresponding results (grouped together)
     if (toolCalls && toolCalls.length > 0) {
-      
       toolCalls.forEach((call, toolIndex) => {
         // Format parameters to show all parameters
         let paramDisplay = '';
@@ -201,7 +199,15 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
 
     return (
       <Box flexDirection="column">
-        {renderParts}
+        {renderParts.map((part, index) => {
+          // Add spacing between content and tool calls
+          const isToolCall = index > 0 && content && content.trim();
+          return (
+            <Box key={index} marginTop={isToolCall && index === 1 ? 1 : 0}>
+              {part}
+            </Box>
+          );
+        })}
       </Box>
     );
   };
@@ -216,7 +222,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
       const toolResults = results.split('\n\n');
       
       return (
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginLeft={3}>
           {toolResults.map((result, resultIndex) => {
             const resultKey = `${index}-${resultIndex}`;
             
@@ -541,10 +547,18 @@ const ToolResultRenderer: React.FC<{
               paddingX={1}
               paddingY={1}
             >
+              {/* Show permission message for file operations */}
+              {(parsed.result?.file_path || parsed.parameters?.file_path) && (
+                <Box marginBottom={1}>
+                  <Text color="gray">
+                    File {parsed.result?.file_path || parsed.parameters?.file_path} is within approved folder {(parsed.result?.file_path || parsed.parameters?.file_path)?.substring(0, (parsed.result?.file_path || parsed.parameters?.file_path)?.lastIndexOf('/')) || '/Users/ashwinkr/projects/Jasper/src'}
+                  </Text>
+                </Box>
+              )}
               <Box>
                 <Text>
                   <Text color="gray">⎿  </Text>
-                  <Text color="white">
+                  <Text color="gray">
                     {summaryText}
                   </Text>
                 </Text>
@@ -579,6 +593,14 @@ const ToolResultRenderer: React.FC<{
             paddingX={1}
             paddingY={1}
           >
+            {/* Add permission message if it's a file operation */}
+            {(parsed.result?.file_path || parsed.parameters?.file_path) && (
+              <Box marginBottom={1}>
+                <Text color="gray">
+                  File {parsed.result?.file_path || parsed.parameters?.file_path} is within approved folder {(parsed.result?.file_path || parsed.parameters?.file_path)?.substring(0, (parsed.result?.file_path || parsed.parameters?.file_path)?.lastIndexOf('/')) || '/Users/ashwinkr/projects/Jasper/src'}
+                </Text>
+              </Box>
+            )}
             {displayLines.map((line: string, lineIndex: number) => (
               <Box key={lineIndex}>
                 <Text>

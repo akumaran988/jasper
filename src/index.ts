@@ -169,9 +169,7 @@ const App: React.FC<AppProps> = ({ config }) => {
     logger.debug('Permission check result', { permissionResult });
     
     if (permissionResult.allowed) {
-      if (permissionResult.reason) {
-        console.log(`${permissionResult.reason}`);
-      }
+      // Don't log permission messages to console - they'll be shown in the UI
       return true;
     }
     

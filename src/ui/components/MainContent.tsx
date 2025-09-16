@@ -57,20 +57,27 @@ export const MainContent = ({
       )}
 
       {/* Completed Messages - Use Static component like gemini-cli */}
+      {/* Only remount when historyRemountKey changes due to terminal resize */}
       <Static
-        key={historyRemountKey}
-        items={completedMessages.map((message, index) => (
-          <MessageRenderer
-            key={`completed-${index}-${message.timestamp?.getTime() || 0}`}
-            message={message}
-            messages={context.messages}
-            index={index}
-            terminalWidth={mainAreaWidth}
-            availableTerminalHeight={staticAreaMaxItemHeight}
-          />
-        ))}
+        key={`static-${historyRemountKey}`}
+        items={completedMessages.map((message, index) => {
+          // Create stable unique key based on message content and position
+          const messageKey = `msg-${index}-${message.timestamp?.getTime() || index}-${message.content?.slice(0, 50) || ''}`;
+          return {
+            key: messageKey,
+            component: (
+              <MessageRenderer
+                message={message}
+                messages={context.messages}
+                index={index}
+                terminalWidth={mainAreaWidth}
+                availableTerminalHeight={staticAreaMaxItemHeight}
+              />
+            )
+          };
+        })}
       >
-        {(item) => item}
+        {(item) => <Box key={item.key} marginBottom={1}>{item.component}</Box>}
       </Static>
 
       {/* Pending Messages - Dynamic container like gemini-cli */}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useInput, useApp, useStdout } from 'ink';
+import ansiEscapes from 'ansi-escapes';
 import { ConversationContext, PermissionContext, PermissionResponse, PermissionRule, SlashCommand } from '../types/index.js';
 import { permissionRegistry } from '../permissions/registry.js';
 import { App } from './App.js';
@@ -67,6 +68,8 @@ const TerminalContent: React.FC<TerminalProps> = ({
     columns: (process.stdout.columns || 60) - TERMINAL_PADDING_X,
     rows: process.stdout.rows || 20,
   });
+  
+  const isInitialMount = React.useRef(true);
 
   useEffect(() => {
     function updateSize() {
@@ -86,6 +89,33 @@ const TerminalContent: React.FC<TerminalProps> = ({
   const [constrainHeight, setConstrainHeight] = useState(true);
   const [historyRemountKey, setHistoryRemountKey] = useState(0);
   
+  // Refresh static content function (gemini-cli pattern)
+  const { stdout } = useStdout();
+  const refreshStatic = useCallback(() => {
+    stdout.write(ansiEscapes.clearTerminal); // Clear terminal like gemini-cli
+    setHistoryRemountKey((prev) => prev + 1);
+    logger.debug('Terminal refreshed due to resize', {
+      columns: terminalSize.columns,
+      rows: terminalSize.rows
+    });
+  }, [logger, terminalSize, stdout]);
+  
+  // Terminal refresh on resize (gemini-cli exact pattern)
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    const handler = setTimeout(() => {
+      refreshStatic();
+    }, 300);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [terminalSize.columns, refreshStatic]);
+  
   const uiState: UIState = useMemo(() => {
     const widthFraction = 0.9;
     const mainAreaWidth = Math.floor(terminalSize.columns * widthFraction);
@@ -104,12 +134,6 @@ const TerminalContent: React.FC<TerminalProps> = ({
       historyRemountKey
     };
   }, [terminalSize, constrainHeight, isProcessing, pendingPermission, historyRemountKey]);
-
-  // Refresh static content function (gemini-cli pattern)
-  const refreshStatic = useCallback(() => {
-    process.stdout.write('\\x1b[2J\\x1b[H'); // Clear terminal
-    setHistoryRemountKey((prev) => prev + 1);
-  }, []);
 
   // Enhanced auto-scroll functionality with streaming support (gemini-cli inspired)
   const [scrollState, scrollControls] = useAutoScroll(
@@ -146,6 +170,9 @@ const TerminalContent: React.FC<TerminalProps> = ({
 
   // Handle keyboard input (following gemini-cli patterns)
   useInput((inputChar: string, key: any) => {
+    // Debug: Log all key events to see what's being received
+    logger.debug('Key pressed:', { inputChar, key: Object.keys(key).filter(k => key[k]).join(',') });
+    
     if (key.ctrl && inputChar === 'c') {
       exit();
       return;
@@ -228,30 +255,130 @@ const TerminalContent: React.FC<TerminalProps> = ({
       const currentPos = cursorPosition;
       const newInput = input.slice(0, currentPos) + inputChar + input.slice(currentPos);
       setInput(newInput);
-      setCursorPosition(currentPos + inputChar.length);
-      setDisplayCursorPosition(currentPos + inputChar.length);
+      const newPos = currentPos + inputChar.length;
+      setCursorPosition(newPos);
+      setDisplayCursorPosition(newPos);
+      logger.debug('Text input', { char: inputChar, oldInput: input, newInput, oldPos: currentPos, newPos });
       return;
     }
 
-    // Handle backspace
-    if (key.backspace && !pendingPermission && cursorPosition > 0) {
+    // Handle backspace and delete keys - both work like backspace for intuitive editing
+    if ((key.backspace || key.delete) && !pendingPermission && cursorPosition > 0) {
+      logger.debug('Delete key pressed', { backspace: key.backspace, delete: key.delete, cursorPos: cursorPosition, inputLength: input.length });
+      
+      // Both backspace and delete behave the same: delete character before cursor
       const newInput = input.slice(0, cursorPosition - 1) + input.slice(cursorPosition);
       setInput(newInput);
-      setCursorPosition(prev => Math.max(0, prev - 1));
-      setDisplayCursorPosition(prev => Math.max(0, prev - 1));
+      const newPos = Math.max(0, cursorPosition - 1);
+      setCursorPosition(newPos);
+      setDisplayCursorPosition(newPos);
+      logger.debug('Character deleted', { keyType: key.backspace ? 'backspace' : 'delete', newInput, newPos });
       return;
     }
 
-    // Handle arrow keys for cursor movement
+    // Handle arrow keys for cursor movement - simplified with logging
     if (key.leftArrow && !pendingPermission) {
-      setCursorPosition(prev => Math.max(0, prev - 1));
-      setDisplayCursorPosition(prev => Math.max(0, prev - 1));
+      const newPos = Math.max(0, cursorPosition - 1);
+      setCursorPosition(newPos);
+      setDisplayCursorPosition(newPos);
+      logger.debug('Left arrow', { oldPos: cursorPosition, newPos });
       return;
     }
     
     if (key.rightArrow && !pendingPermission) {
-      setCursorPosition(prev => Math.min(input.length, prev + 1));
-      setDisplayCursorPosition(prev => Math.min(input.length, prev + 1));
+      const newPos = Math.min(input.length, cursorPosition + 1);
+      setCursorPosition(newPos);
+      setDisplayCursorPosition(newPos);
+      logger.debug('Right arrow', { oldPos: cursorPosition, newPos });
+      return;
+    }
+    
+    // Handle up/down arrows for multi-line input
+    if (key.upArrow && !pendingPermission) {
+      const lines = input.split('\n');
+      logger.debug('Up arrow pressed', { lines: lines.length, cursorPos: cursorPosition });
+      
+      if (lines.length <= 1) {
+        logger.debug('Up arrow: single line, ignoring');
+        return;
+      }
+      
+      let currentOffset = 0;
+      let currentLine = 0;
+      let currentCol = cursorPosition;
+      
+      // Find current line and column
+      for (let i = 0; i < lines.length; i++) {
+        const lineLength = lines[i].length;
+        if (currentOffset + lineLength >= cursorPosition) {
+          currentLine = i;
+          currentCol = cursorPosition - currentOffset;
+          break;
+        }
+        currentOffset += lineLength + 1; // +1 for newline
+      }
+      
+      logger.debug('Up arrow: current position', { currentLine, currentCol, totalLines: lines.length });
+      
+      // Move to previous line if possible
+      if (currentLine > 0) {
+        const prevLineLength = lines[currentLine - 1].length;
+        const newCol = Math.min(currentCol, prevLineLength);
+        let newOffset = 0;
+        for (let i = 0; i < currentLine - 1; i++) {
+          newOffset += lines[i].length + 1;
+        }
+        const newPosition = newOffset + newCol;
+        setCursorPosition(newPosition);
+        setDisplayCursorPosition(newPosition);
+        logger.debug('Up arrow: moved to', { newLine: currentLine - 1, newCol, newPosition });
+      } else {
+        logger.debug('Up arrow: already at top line');
+      }
+      return;
+    }
+    
+    if (key.downArrow && !pendingPermission) {
+      const lines = input.split('\n');
+      logger.debug('Down arrow pressed', { lines: lines.length, cursorPos: cursorPosition });
+      
+      if (lines.length <= 1) {
+        logger.debug('Down arrow: single line, ignoring');
+        return;
+      }
+      
+      let currentOffset = 0;
+      let currentLine = 0;
+      let currentCol = cursorPosition;
+      
+      // Find current line and column
+      for (let i = 0; i < lines.length; i++) {
+        const lineLength = lines[i].length;
+        if (currentOffset + lineLength >= cursorPosition) {
+          currentLine = i;
+          currentCol = cursorPosition - currentOffset;
+          break;
+        }
+        currentOffset += lineLength + 1; // +1 for newline
+      }
+      
+      logger.debug('Down arrow: current position', { currentLine, currentCol, totalLines: lines.length });
+      
+      // Move to next line if possible
+      if (currentLine < lines.length - 1) {
+        const nextLineLength = lines[currentLine + 1].length;
+        const newCol = Math.min(currentCol, nextLineLength);
+        let newOffset = 0;
+        for (let i = 0; i <= currentLine; i++) {
+          newOffset += lines[i].length + 1;
+        }
+        const newPosition = newOffset + newCol;
+        setCursorPosition(newPosition);
+        setDisplayCursorPosition(newPosition);
+        logger.debug('Down arrow: moved to', { newLine: currentLine + 1, newCol, newPosition });
+      } else {
+        logger.debug('Down arrow: already at bottom line');
+      }
       return;
     }
   });

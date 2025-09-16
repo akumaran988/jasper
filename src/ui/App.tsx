@@ -54,7 +54,7 @@ export const App: React.FC<AppProps> = ({
   const streamingContext = useStreamingContext();
 
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" width="90%">
       {/* Main Content Area - Following gemini-cli's exact pattern */}
       <MainContent
         context={context}
@@ -68,7 +68,7 @@ export const App: React.FC<AppProps> = ({
       />
 
       {/* Controls Area - Following gemini-cli's pattern */}
-      <Box flexDirection="column" width="100%">
+      <Box flexDirection="column">
         {/* Permission Selector */}
         {pendingPermission && (
           <PermissionSelector 
