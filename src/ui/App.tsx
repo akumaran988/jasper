@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
+import Spinner from 'ink-spinner';
 import { ConversationContext, PermissionContext, PermissionResponse, PermissionRule } from '../types/index.js';
 import { MainContent } from './components/MainContent.js';
 import InputHandler from './input.js';
@@ -102,18 +103,53 @@ export const App: React.FC<AppProps> = ({
   );
 };
 
-// Simple indicators to replace the complex ones temporarily
-const ProcessingIndicator = () => (
-  <Box marginTop={1}>
-    <Text color="cyan">⟨ Processing...</Text>
-  </Box>
-);
+// Fun processing indicators with quirky messages
+const ProcessingIndicator = () => {
+  const messages = [
+    "Brewing some digital magic...",
+    "Crunching ones and zeros...",
+    "Consulting the silicon oracle...",
+    "Spinning up the neural hamsters...",
+    "Tickling the algorithms...",
+    "Awakening the code spirits...",
+    "Summoning computational wisdom...",
+    "Dancing with data patterns...",
+    "Whispering to the machines...",
+    "Channeling the tech muses..."
+  ];
+  
+  const message = messages[Math.floor(Math.random() * messages.length)];
+  
+  return (
+    <Box marginTop={1}>
+      <Text color="cyan">
+        <Spinner type="dots" /> {message}
+      </Text>
+    </Box>
+  );
+};
 
-const CompactingIndicator = () => (
-  <Box marginTop={1}>
-    <Text color="yellow">⟨ Compacting conversation...</Text>
-  </Box>
-);
+const CompactingIndicator = () => {
+  const messages = [
+    "Folding conversation origami...",
+    "Squishing chat bubbles...",
+    "Condensing digital chatter...",
+    "Compressing memory lanes...",
+    "Tidying up the thought threads...",
+    "Shrinking the word warehouse...",
+    "Packing conversation luggage..."
+  ];
+  
+  const message = messages[Math.floor(Math.random() * messages.length)];
+  
+  return (
+    <Box marginTop={1}>
+      <Text color="yellow">
+        <Spinner type="dots" /> {message}
+      </Text>
+    </Box>
+  );
+};
 
 const PermissionSelector = ({ pendingPermission, sessionApprovals, onPermissionResponse }: any) => {
   return (

@@ -27,12 +27,13 @@ export class ToolRegistry {
         id: toolCall.id,
         success: false,
         result: null,
-        error: `Tool '${toolCall.name}' not found`
+        error: `Tool '${toolCall.name}' not found`,
+        executionTime: 0
       };
     }
 
+    const startTime = Date.now();
     try {
-      const startTime = Date.now();
       const result = await tool.execute(toolCall.parameters);
       const endTime = Date.now();
       const executionTime = endTime - startTime;
@@ -44,7 +45,6 @@ export class ToolRegistry {
         executionTime
       };
     } catch (error) {
-      const startTime = Date.now();
       const endTime = Date.now();
       const executionTime = endTime - startTime;
       

@@ -6,6 +6,36 @@ import { displayRegistry } from '../display/registry.js';
 import { DisplayContext } from '../display/types.js';
 import { getLogger } from '../utils/logger.js';
 
+// Helper function for tool-specific permission messages
+const getToolPermissionMessage = (toolName: string, params: any, result: any): string | null => {
+  switch (toolName) {
+    case 'file_ops':
+    case 'Edit':
+    case 'MultiEdit':
+    case 'Write':
+    case 'Read':
+      const filePath = result?.file_path || params?.file_path || params?.path;
+      if (filePath) {
+        const approvedFolder = filePath.substring(0, filePath.lastIndexOf('/')) || '/Users/ashwinkr/projects/Jasper/src';
+        return `File ${filePath} is within approved folder ${approvedFolder}`;
+      }
+      break;
+    case 'Bash':
+      // For bash, we could show command approval info
+      // Example: "Command 'ls' approved for folder /path"
+      const command = params?.command;
+      const workingDir = params?.workingDir || '/Users/ashwinkr/projects/Jasper';
+      if (command) {
+        return `Command '${command.split(' ')[0]}' approved for folder ${workingDir}`;
+      }
+      break;
+    // Add more tools as needed
+    default:
+      return null;
+  }
+  return null;
+};
+
 interface MessageRendererProps {
   message: Message;
   messages: Message[];
@@ -222,7 +252,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
       const toolResults = results.split('\n\n');
       
       return (
-        <Box flexDirection="column" marginLeft={3}>
+        <Box flexDirection="column">
           {toolResults.map((result, resultIndex) => {
             const resultKey = `${index}-${resultIndex}`;
             
@@ -538,29 +568,23 @@ const ToolResultRenderer: React.FC<{
             summaryText = `Found ${content.split('\n').length} lines${timingText}`;
           }
           
+          // Get tool info for permission message
+          const toolInfo = extractToolInfo(result);
+          const permissionMessage = toolInfo ? getToolPermissionMessage(toolInfo.toolName, toolInfo.parameters, parsed.result) : null;
+          
           return (
-            <Box 
-              flexDirection="column" 
-              marginLeft={2}
-              borderStyle={isFocused ? 'single' : undefined}
-              borderColor={isFocused ? 'cyan' : undefined}
-              paddingX={1}
-              paddingY={1}
-            >
-              {/* Show permission message for file operations */}
-              {(parsed.result?.file_path || parsed.parameters?.file_path) && (
-                <Box marginBottom={1}>
-                  <Text color="gray">
-                    File {parsed.result?.file_path || parsed.parameters?.file_path} is within approved folder {(parsed.result?.file_path || parsed.parameters?.file_path)?.substring(0, (parsed.result?.file_path || parsed.parameters?.file_path)?.lastIndexOf('/')) || '/Users/ashwinkr/projects/Jasper/src'}
-                  </Text>
+            <Box flexDirection="column">
+              {/* Permission message on its own line if exists */}
+              {permissionMessage && (
+                <Box marginLeft={6}>
+                  <Text color="gray">{permissionMessage}</Text>
                 </Box>
               )}
+              {/* Compact tool result */}
               <Box>
                 <Text>
-                  <Text color="gray">⎿  </Text>
-                  <Text color="gray">
-                    {summaryText}
-                  </Text>
+                  <Text color="gray">  ⎿  </Text>
+                  <Text color="gray">{summaryText}</Text>
                 </Text>
               </Box>
             </Box>
@@ -584,6 +608,10 @@ const ToolResultRenderer: React.FC<{
         let displayLines = displayContent.split('\n');
         
         
+        // Get tool info for permission message
+        const toolInfo = extractToolInfo(result);
+        const permissionMessage = toolInfo ? getToolPermissionMessage(toolInfo.toolName, toolInfo.parameters, parsed.result) : null;
+        
         return (
           <Box 
             flexDirection="column" 
@@ -593,12 +621,10 @@ const ToolResultRenderer: React.FC<{
             paddingX={1}
             paddingY={1}
           >
-            {/* Add permission message if it's a file operation */}
-            {(parsed.result?.file_path || parsed.parameters?.file_path) && (
+            {/* Add permission message if it exists */}
+            {permissionMessage && (
               <Box marginBottom={1}>
-                <Text color="gray">
-                  File {parsed.result?.file_path || parsed.parameters?.file_path} is within approved folder {(parsed.result?.file_path || parsed.parameters?.file_path)?.substring(0, (parsed.result?.file_path || parsed.parameters?.file_path)?.lastIndexOf('/')) || '/Users/ashwinkr/projects/Jasper/src'}
-                </Text>
+                <Text color="gray">{permissionMessage}</Text>
               </Box>
             )}
             {displayLines.map((line: string, lineIndex: number) => (
