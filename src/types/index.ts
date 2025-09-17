@@ -39,9 +39,14 @@ export interface LLMProvider {
 
 export interface ConversationContext {
   messages: Message[];
+  allMessages: Message[]; // Full history including compacted messages for UI display
+  compactedSummary?: string; // Summary of compacted messages
+  lastCompactionIndex: number; // Index of last message when compaction occurred
   tools: Tool[];
   maxIterations: number;
   currentIteration: number;
+  tokenCount: number; // Current token usage
+  isCompacting?: boolean; // Flag to show compaction indicator
 }
 
 export interface JasperConfig {

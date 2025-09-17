@@ -1,5 +1,6 @@
 import { LLMProvider, Message, ConversationContext, AIResponse, ToolCall, ToolResult } from '../types/index.js';
 import { globalToolRegistry } from './tools.js';
+import { countConversationTokens, shouldCompactConversation, createConversationSummary } from '../utils/tokenCounter.js';
 
 export class ConversationAgent {
   private llmProvider: LLMProvider;
@@ -23,9 +24,12 @@ export class ConversationAgent {
     this.apiThrottleMs = apiThrottleMs;
     this.context = {
       messages: [],
+      allMessages: [],
+      lastCompactionIndex: 0,
       tools: globalToolRegistry.getAll(),
       maxIterations,
-      currentIteration: 0
+      currentIteration: 0,
+      tokenCount: 0
     };
     
     this.systemPrompt = this.buildSystemPrompt();
@@ -141,32 +145,41 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
   }
 
   private addSystemMessage(content: string): void {
-    this.context.messages.push({
-      role: 'system',
+    const message = {
+      role: 'system' as const,
       content,
       timestamp: new Date()
-    });
+    };
+    this.context.messages.push(message);
+    this.context.allMessages.push(message);
+    this.updateTokenCount();
   }
 
   addUserMessage(content: string): void {
-    this.context.messages.push({
-      role: 'user',
+    const message = {
+      role: 'user' as const,
       content,
       timestamp: new Date()
-    });
+    };
+    this.context.messages.push(message);
+    this.context.allMessages.push(message);
+    this.updateTokenCount();
   }
 
   private addAssistantMessage(response: AIResponse): void {
     // Store response with proper structure, but avoid double-encoding
-    this.context.messages.push({
-      role: 'assistant',
+    const message = {
+      role: 'assistant' as const,
       content: JSON.stringify({
         content: response.content,
         tool_calls: response.tool_calls || [],
         reasoning: response.reasoning
       }),
       timestamp: new Date()
-    });
+    };
+    this.context.messages.push(message);
+    this.context.allMessages.push(message);
+    this.updateTokenCount();
   }
 
   private addToolResults(toolResults: ToolResult[]): void {
@@ -200,16 +213,93 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
       }
     }).join('\n\n');
 
-    this.context.messages.push({
-      role: 'system',
+    const message = {
+      role: 'system' as const,
       content: `Tool execution results:\n${resultsMessage}`,
       timestamp: new Date()
-    });
+    };
+    this.context.messages.push(message);
+    this.context.allMessages.push(message);
+    this.updateTokenCount();
+  }
+
+  private updateTokenCount(): void {
+    this.context.tokenCount = countConversationTokens(this.context.messages);
+  }
+
+  private async checkAndCompactConversation(): Promise<void> {
+    if (shouldCompactConversation(this.context.messages, 10000)) {
+      await this.compactConversation();
+    }
+  }
+
+  private async compactConversation(): Promise<void> {
+    // Don't compact if we've already compacted recently (less than 5 messages ago)
+    if (this.context.allMessages.length - this.context.lastCompactionIndex < 5) {
+      return;
+    }
+
+    // Notify UI that compaction is starting
+    if (this.onContextUpdate) {
+      this.onContextUpdate({ ...this.context, isCompacting: true });
+    }
+
+    try {
+      // Get messages to compact (exclude system message and keep recent messages)
+      const messagesToCompact = this.context.messages.filter(m => 
+        m.role !== 'system' || !m.content.startsWith('You are Jasper')
+      );
+
+      if (messagesToCompact.length < 3) {
+        return; // Not enough messages to compact
+      }
+
+      // Create summary of conversation
+      const summary = await createConversationSummary(messagesToCompact, this.llmProvider);
+      
+      // Store the compacted summary
+      this.context.compactedSummary = summary;
+      this.context.lastCompactionIndex = this.context.allMessages.length;
+
+      // Replace messages for AI (keep system prompt + summary + recent messages)
+      const systemPrompt = this.context.messages.find(m => 
+        m.role === 'system' && m.content.startsWith('You are Jasper')
+      );
+      
+      const recentMessages = this.context.messages.slice(-3); // Keep last 3 messages
+      
+      this.context.messages = [
+        ...(systemPrompt ? [systemPrompt] : []),
+        {
+          role: 'system' as const,
+          content: `======================================== Previous Conversation Compacted ========================================\n${summary}`,
+          timestamp: new Date()
+        },
+        ...recentMessages
+      ];
+
+      this.updateTokenCount();
+
+      // Notify UI of compaction completion
+      if (this.onContextUpdate) {
+        this.onContextUpdate({ ...this.context, isCompacting: false });
+      }
+
+    } catch (error) {
+      console.warn('Failed to compact conversation:', error);
+      // Notify UI that compaction failed/ended
+      if (this.onContextUpdate) {
+        this.onContextUpdate({ ...this.context, isCompacting: false });
+      }
+    }
   }
 
   async processMessage(userInput: string): Promise<ConversationContext> {
     this.addUserMessage(userInput);
     this.context.currentIteration = 0;
+    
+    // Check if we need to compact the conversation before processing
+    await this.checkAndCompactConversation();
 
     while (this.context.currentIteration < this.context.maxIterations) {
       this.context.currentIteration++;
@@ -290,6 +380,9 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
                 this.onContextUpdate({ ...this.context });
               }
               
+              // Check for compaction after each tool execution
+              await this.checkAndCompactConversation();
+              
               // Check if this tool failed critically
               const criticalFailures = toolResults.filter(result => !result.success && this.isCriticalFailure(result));
               if (criticalFailures.length > 0) {
@@ -308,6 +401,9 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
               if (this.onContextUpdate) {
                 this.onContextUpdate({ ...this.context });
               }
+              
+              // Check for compaction after permission denial
+              await this.checkAndCompactConversation();
               
               // Continue to ask for permission for remaining tools
             }

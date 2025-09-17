@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useInput, useApp, useStdout } from 'ink';
 import ansiEscapes from 'ansi-escapes';
 import { ConversationContext, PermissionContext, PermissionResponse, PermissionRule, SlashCommand } from '../types/index.js';
 import { permissionRegistry } from '../permissions/registry.js';
 import { App } from './App.js';
+
 import { useAutoScroll } from '../hooks/useAutoScroll.js';
 import { getLogger } from '../utils/logger.js';
 import { StreamingProvider, useStreamingContext } from '../contexts/StreamingContext.js';
@@ -62,6 +63,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
   const [pasteBlocks, setPasteBlocks] = useState<Array<{start: number, end: number, content: string}>>([]);
   const [displayCursorPosition, setDisplayCursorPosition] = useState(0);
   const [lastPasteTime, setLastPasteTime] = useState(0);
+  const pasteTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Terminal size management (gemini-cli pattern)
   const [terminalSize, setTerminalSize] = useState({
@@ -178,6 +180,12 @@ const TerminalContent: React.FC<TerminalProps> = ({
       return;
     }
 
+    // Handle Ctrl+X to clear screen
+    if (key.ctrl && inputChar === 'x') {
+      onClearConversation?.();
+      return;
+    }
+
     // Enhanced scroll controls (gemini-cli pattern)
     if (key.ctrl && inputChar === 's') {
       // Ctrl+S to show more lines / toggle height constraint
@@ -253,12 +261,162 @@ const TerminalContent: React.FC<TerminalProps> = ({
     // Handle text input
     if (!key.ctrl && !key.meta && !pendingPermission && inputChar.length >= 1) {
       const currentPos = cursorPosition;
-      const newInput = input.slice(0, currentPos) + inputChar + input.slice(currentPos);
-      setInput(newInput);
-      const newPos = currentPos + inputChar.length;
-      setCursorPosition(newPos);
-      setDisplayCursorPosition(newPos);
-      logger.debug('Text input', { char: inputChar, oldInput: input, newInput, oldPos: currentPos, newPos });
+      
+      // For paste operations, don't add trailing newlines that would trigger auto-submit
+      let processedChar = inputChar;
+      // Only detect actual paste operations - large content or structured data
+      // Don't treat small multi-character inputs (like \r from Shift+Enter) as paste
+      const isPaste = (inputChar.length > 20) ||  // Large input is definitely paste
+                     (inputChar.length > 5 && inputChar.includes('{') && inputChar.includes('"')) || // JSON
+                     (inputChar.length > 5 && inputChar.includes('[') && inputChar.includes('"')); // Array
+      
+      if (isPaste && (inputChar.endsWith('\n') || inputChar.endsWith('\r'))) {
+        // Remove trailing newlines/carriage returns from paste to prevent auto-submit
+        processedChar = inputChar.replace(/[\n\r]+$/, '');
+      }
+      
+      setInput(prev => {
+        const newInput = prev.slice(0, currentPos) + processedChar + prev.slice(currentPos);
+        return newInput;
+      });
+      setCursorPosition(currentPos + processedChar.length);
+      
+      // Calculate display cursor position after paste blocks are updated
+      // We need to do this in the setPasteBlocks callback to ensure we have the latest blocks
+                     
+      // Check if this input should be merged with a recent paste block (even if not detected as paste itself)
+      const shouldMergeWithRecentPaste = () => {
+        if (pasteBlocks.length === 0) return false;
+        const lastBlock = pasteBlocks[pasteBlocks.length - 1];
+        return lastBlock && 
+               lastBlock.end === currentPos &&
+               (Date.now() - lastPasteTime) < 1000; // Within 1 second of last paste
+      };
+
+      if (isPaste || shouldMergeWithRecentPaste()) {
+        // Mark the time of paste to prevent auto-submit from newlines
+        if (isPaste) {
+          setLastPasteTime(Date.now());
+        }
+        
+        // Clear any existing paste completion timeout
+        if (pasteTimeoutRef.current) {
+          clearTimeout(pasteTimeoutRef.current);
+        }
+        
+        // Check if this should be merged with the last paste block
+        setPasteBlocks(prev => {
+          const lastBlock = prev[prev.length - 1];
+          const shouldMerge = lastBlock && 
+                             lastBlock.end === currentPos &&
+                             (Date.now() - lastPasteTime) < 1000; // Within 1 second
+          
+          let updatedBlocks;
+          let newCursorPos = currentPos + processedChar.length;
+          
+          if (shouldMerge) {
+            // Merge with the last paste block
+            updatedBlocks = [...prev];
+            const newEnd = currentPos + processedChar.length;
+            const mergedContent = lastBlock.content + inputChar;
+            updatedBlocks[updatedBlocks.length - 1] = {
+              ...lastBlock,
+              end: newEnd,
+              content: mergedContent
+            };
+          } else {
+            // Create new paste block - use original inputChar for content tracking
+            const newPasteBlock = {
+              start: currentPos,
+              end: currentPos + processedChar.length,
+              content: inputChar // Store original content, not processed
+            };
+            updatedBlocks = [...prev, newPasteBlock];
+          }
+          
+          // Calculate display cursor position with the new paste blocks
+          let displayPos = newCursorPos;
+          const sortedBlocks = [...updatedBlocks].sort((a, b) => a.start - b.start);
+          
+          for (const block of sortedBlocks) {
+            if (newCursorPos > block.start && block.content.length > 1000) {
+              const blockLines = block.content.split(/\r\n|\r|\n/);
+              const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+              const adjustment = indicator.length - (block.end - block.start);
+              displayPos += adjustment;
+            }
+          }
+          
+          setDisplayCursorPosition(displayPos);
+          return updatedBlocks;
+        });
+        
+        // Set timeout to detect paste completion and add automatic spacing for large pastes
+        pasteTimeoutRef.current = setTimeout(() => {
+          setPasteBlocks(prev => {
+            const lastBlock = prev[prev.length - 1];
+            if (lastBlock && lastBlock.content.length > 1000) {
+              // Add a space after large paste blocks for easier continued typing
+              const spacePos = lastBlock.end;
+              
+              setInput(prevInput => {
+                const newInput = prevInput.slice(0, spacePos) + ' ' + prevInput.slice(spacePos);
+                return newInput;
+              });
+              
+              setCursorPosition(spacePos + 1);
+              
+              // Update paste blocks positions after inserting space
+              const updatedBlocks = prev.map(block => ({
+                ...block,
+                start: block.start > spacePos ? block.start + 1 : block.start,
+                end: block.end > spacePos ? block.end + 1 : block.end
+              }));
+              
+              // Update display cursor position
+              let newDisplayPos = spacePos + 1;
+              const sortedBlocks = [...updatedBlocks].sort((a, b) => a.start - b.start);
+              for (const block of sortedBlocks) {
+                if (newDisplayPos > block.start && block.content.length > 1000) {
+                  const blockLines = block.content.split(/\r\n|\r|\n/);
+                  const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+                  const adjustment = indicator.length - (block.end - block.start);
+                  newDisplayPos += adjustment;
+                }
+              }
+              setDisplayCursorPosition(newDisplayPos);
+              
+              return updatedBlocks;
+            }
+            return prev;
+          });
+        }, 300); // Wait 300ms after last paste chunk to add spacing
+        
+        setIsPastedContent(true);
+      } else {
+        // Regular typing - clear any pending paste timeout
+        if (pasteTimeoutRef.current) {
+          clearTimeout(pasteTimeoutRef.current);
+          pasteTimeoutRef.current = null;
+        }
+        
+        // For regular typing, just update display cursor position
+        const newCursorPos = currentPos + processedChar.length;
+        let displayPos = newCursorPos;
+        const sortedBlocks = [...pasteBlocks].sort((a, b) => a.start - b.start);
+        
+        for (const block of sortedBlocks) {
+          if (newCursorPos > block.start && block.content.length > 1000) {
+            const blockLines = block.content.split(/\r\n|\r|\n/);
+            const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+            const adjustment = indicator.length - (block.end - block.start);
+            displayPos += adjustment;
+          }
+        }
+        
+        setDisplayCursorPosition(displayPos);
+      }
+      
       return;
     }
 
@@ -266,12 +424,65 @@ const TerminalContent: React.FC<TerminalProps> = ({
     if ((key.backspace || key.delete) && !pendingPermission && cursorPosition > 0) {
       logger.debug('Delete key pressed', { backspace: key.backspace, delete: key.delete, cursorPos: cursorPosition, inputLength: input.length });
       
-      // Both backspace and delete behave the same: delete character before cursor
+      // Check if cursor is within a large paste block (>1000 chars)
+      const largePasteBlock = pasteBlocks.find(block => 
+        block.content.length > 1000 && 
+        cursorPosition >= block.start && 
+        cursorPosition <= block.end
+      );
+      
+      if (largePasteBlock) {
+        // Delete the entire large paste block
+        const newInput = input.slice(0, largePasteBlock.start) + input.slice(largePasteBlock.end);
+        setInput(newInput);
+        const newPos = largePasteBlock.start;
+        setCursorPosition(newPos);
+        setDisplayCursorPosition(newPos);
+        
+        // Remove this paste block from tracking
+        setPasteBlocks(prev => prev.filter(block => block !== largePasteBlock));
+        
+        // Update remaining paste blocks positions
+        setPasteBlocks(prev => prev.map(block => {
+          const deletedLength = largePasteBlock.end - largePasteBlock.start;
+          if (block.start > largePasteBlock.end) {
+            return {
+              ...block,
+              start: block.start - deletedLength,
+              end: block.end - deletedLength
+            };
+          }
+          return block;
+        }));
+        
+        logger.debug('Large paste block deleted', { blockLength: largePasteBlock.content.length, newPos });
+        return;
+      }
+      
+      // Standard character deletion
       const newInput = input.slice(0, cursorPosition - 1) + input.slice(cursorPosition);
       setInput(newInput);
       const newPos = Math.max(0, cursorPosition - 1);
       setCursorPosition(newPos);
       setDisplayCursorPosition(newPos);
+      
+      // Update paste block positions after character deletion
+      setPasteBlocks(prev => prev.map(block => {
+        if (block.start >= cursorPosition) {
+          return {
+            ...block,
+            start: block.start - 1,
+            end: block.end - 1
+          };
+        } else if (block.end > cursorPosition) {
+          return {
+            ...block,
+            end: block.end - 1
+          };
+        }
+        return block;
+      }));
+      
       logger.debug('Character deleted', { keyType: key.backspace ? 'backspace' : 'delete', newInput, newPos });
       return;
     }
@@ -407,7 +618,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
         setConstrainHeight(true); // Return to normal view
       }, 50);
     }
-  }, [input, isProcessing, onMessage, scrollControls, refreshStatic, logger]);
+  }, [input, isProcessing, onMessage, scrollControls, scrollState.isAutoScrollEnabled, logger]);
 
   return (
     <App

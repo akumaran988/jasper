@@ -40,4 +40,4 @@ coverage/
 # Optional: ignore generated markdown
 *.md~
 
-/gemini-cli/
+/gemini-cli

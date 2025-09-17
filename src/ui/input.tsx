@@ -18,9 +18,55 @@ const InputHandler: React.FC<InputHandlerProps> = ({
 }) => {
   const maxVisibleLines = 10;
   
-  // Since we simplified the cursor logic, we can use input directly for now
-  const displayContent = input;
-  const displayLines = displayContent.split(/\r\n|\r|\n/);
+  // Check if we have large pasted content to show in compact format
+  const hasLargePasteBlocks = pasteBlocks.some(block => block.content.length > 1000);
+  
+  // Debug logging
+  React.useEffect(() => {
+    if (pasteBlocks.length > 0) {
+      // Only log using logger, not console
+      import('../utils/logger.js').then(({ getLogger }) => {
+        const logger = getLogger();
+        logger.debug('InputHandler: pasteBlocks detected', { 
+          blockCount: pasteBlocks.length, 
+          hasLargePasteBlocks,
+          blocks: pasteBlocks.map(b => ({ start: b.start, end: b.end, length: b.content.length }))
+        });
+      });
+    }
+  }, [pasteBlocks, hasLargePasteBlocks]);
+  
+  // Create display content with paste indicators replacing pasted portions
+  const createDisplayContent = () => {
+    if (pasteBlocks.length === 0) {
+      return input; // No paste blocks, show original content
+    }
+    
+    let displayContent = input;
+    
+    // Sort paste blocks by start position (reverse order to maintain positions)
+    const sortedBlocks = [...pasteBlocks].sort((a, b) => b.start - a.start);
+    
+    // Replace each large paste block with its indicator
+    sortedBlocks.forEach((block, index) => {
+      // Only show compact display for blocks >1000 chars
+      if (block.content.length > 1000) {
+        const blockLines = block.content.split(/\r\n|\r|\n/);
+        const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+        
+        const before = displayContent.slice(0, block.start);
+        const after = displayContent.slice(block.end);
+        displayContent = before + indicator + after;
+      }
+    });
+    
+    return displayContent;
+  };
+  
+  const displayContent = createDisplayContent();
+  let displayLines: string[];
+  
+  displayLines = displayContent.split(/\r\n|\r|\n/);
   
   // Calculate which lines to show with smart scrolling based on cursor position
   const displayTotalLines = displayLines.length;
@@ -55,9 +101,15 @@ const InputHandler: React.FC<InputHandlerProps> = ({
   
   const visibleLines = displayLines.slice(startLine, startLine + maxVisibleLines);
   
+  // Helper to render text with paste indicators in blue
   const renderTextWithPasteIndicators = (text: string) => {
-    // Simplified - just return text for now
-    return text;
+    const parts = text.split(/(\[Pasted [^\]]+\])/);
+    return parts.map((part, index) => {
+      if (part.match(/\[Pasted [^\]]+\]/)) {
+        return <Text key={index} color="blue">{part}</Text>;
+      }
+      return <Text key={index} color="white">{part}</Text>;
+    });
   };
   
   return (
@@ -116,9 +168,9 @@ const InputHandler: React.FC<InputHandlerProps> = ({
       {displayTotalLines > maxVisibleLines && (
         <Box marginTop={1}>
           <Text color="gray" dimColor>
-            {startLine > 0 ? `↑ ${startLine} lines above` : ''} 
+            {startLine > 0 ? `${startLine} lines above` : ''} 
             {startLine > 0 && (startLine + maxVisibleLines < displayTotalLines) ? ' • ' : ''}
-            {startLine + maxVisibleLines < displayTotalLines ? `${displayTotalLines - startLine - maxVisibleLines} lines below ↓` : ''}
+            {startLine + maxVisibleLines < displayTotalLines ? `${displayTotalLines - startLine - maxVisibleLines} lines below` : ''}
           </Text>
         </Box>
       )}
@@ -126,7 +178,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
       {/* Input hints */}
       <Box marginTop={1}>
         <Text color="gray" dimColor>
-          ↵ to send • ⇧↵ new line {isPasted && '• Pasted content highlighted'}
+          • Shift+Enter - new line • Ctrl+X - clear screen
         </Text>
       </Box>
     </Box>

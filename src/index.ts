@@ -73,16 +73,23 @@ const App: React.FC<AppProps> = ({ config }) => {
   const [agent, setAgent] = useState<ConversationAgent | null>(null);
   const [context, setContext] = useState<ConversationContext>({
     messages: [],
+    allMessages: [],
+    lastCompactionIndex: 0,
     tools: [],
     maxIterations: config.maxIterations,
-    currentIteration: 0
+    currentIteration: 0,
+    tokenCount: 0
   });
   
   const handleClearConversation = useCallback(() => {
     setContext(prev => ({
       ...prev,
       messages: [],
-      currentIteration: 0
+      allMessages: [],
+      lastCompactionIndex: 0,
+      currentIteration: 0,
+      tokenCount: 0,
+      compactedSummary: undefined
     }));
     // Also clear session approvals
     sessionApprovalsRef.current.clear();

@@ -84,19 +84,30 @@ export const App: React.FC<AppProps> = ({
           <ProcessingIndicator />
         )}
         
-        {isCompacting && (
+        {(isCompacting || context.isCompacting) && (
           <CompactingIndicator />
         )}
 
         {/* Input Handler */}
         {!pendingPermission && (
-          <InputHandler 
-            input={input} 
-            onInputChange={onInputChange} 
-            isPasted={isPasted} 
-            cursorPosition={cursorPosition}
-            pasteBlocks={pasteBlocks}
-          />
+          <>
+            <InputHandler 
+              input={input} 
+              onInputChange={onInputChange} 
+              isPasted={isPasted} 
+              cursorPosition={cursorPosition}
+              pasteBlocks={pasteBlocks}
+            />
+            {/* Token Usage Indicator */}
+            <Box marginTop={0} marginLeft={2}>
+              <Text color="gray" dimColor>
+                Tokens: {Math.round((context.tokenCount / 10000) * 100)}%
+                {context.compactedSummary && (
+                  <Text color="yellow"> (compacted)</Text>
+                )}
+              </Text>
+            </Box>
+          </>
         )}
       </Box>
     </Box>

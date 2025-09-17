@@ -243,6 +243,36 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
   };
 
   const renderSystemMessage = () => {
+    // Handle compacted conversation summary
+    if (message.content.startsWith('======================================== Previous Conversation Compacted ========================================')) {
+      const summaryContent = message.content.replace('======================================== Previous Conversation Compacted ========================================\n', '');
+      
+      return (
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
+          <Text color="gray">
+            ======================================== Previous Conversation Compacted ========================================
+          </Text>
+          <Box flexDirection="column">
+            <Text>
+              <Text color="blue">⏺</Text> <Text bold color="white">Compact summary</Text> (ctrl+r to expand)
+            </Text>
+            {/* Parse and display compact summary items */}
+            {summaryContent.split('\n').slice(0, 10).map((line, lineIndex) => {
+              if (line.trim()) {
+                return (
+                  <Box key={lineIndex}>
+                    <Text color="gray">  ⎿  </Text>
+                    <Text color="gray">{line.trim()}</Text>
+                  </Box>
+                );
+              }
+              return null;
+            })}
+          </Box>
+        </Box>
+      );
+    }
+    
     // Handle tool results exactly like Claude Code
     if (message.content.startsWith('Tool execution results:')) {
       
