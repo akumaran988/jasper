@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { Message } from '../types/index.js';
+import { Message, ToolResult } from '../types/index.js';
 import MarkdownRenderer from './markdown.js';
 import { displayRegistry } from '../display/registry.js';
 import { DisplayContext } from '../display/types.js';
 import { getLogger } from '../utils/logger.js';
+import { globalToolRegistry } from '../core/tools.js';
 
 // Helper function for tool-specific permission messages
 const getToolPermissionMessage = (toolName: string, params: any, result: any): string | null => {
@@ -273,59 +274,17 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
       );
     }
     
-    // Handle tool results exactly like Claude Code
-    if (message.content.startsWith('Tool execution results:')) {
-      
-      const results = message.content.replace('Tool execution results:\n', '');
-      
-      // Parse individual tool results
-      const toolResults = results.split('\n\n');
-      
+    // Handle tool results using structured data
+    if (message.toolResults) {
       return (
         <Box flexDirection="column">
-          {toolResults.map((result, resultIndex) => {
+          {message.toolResults.map((toolResult, resultIndex) => {
             const resultKey = `${index}-${resultIndex}`;
             
-            // Calculate the global index for this tool result
-            let globalIndex = 0;
-            for (let i = 0; i < messages.length; i++) {
-              if (messages[i].role === 'system' && messages[i].content.startsWith('Tool execution results:')) {
-                if (i < index) {
-                  const otherResults = messages[i].content.replace('Tool execution results:\n', '').split('\n\n');
-                  globalIndex += otherResults.length;
-                } else if (i === index) {
-                  globalIndex += resultIndex;
-                  break;
-                }
-              }
-            }
-            
-            // Use the SAME logic as getAllToolResultKeys to ensure sync
-            let displayNumber = 0;
-            const allKeys: string[] = [];
-            
-            // Build the same array as getAllToolResultKeys
-            messages.forEach((msg, msgIndex) => {
-              if (msg.role === 'system' && msg.content.startsWith('Tool execution results:')) {
-                const results = msg.content.replace('Tool execution results:\n', '').split('\n\n');
-                results.forEach((_, resultIdx) => {
-                  allKeys.push(`${msgIndex}-${resultIdx}`);
-                });
-              }
-            });
-            
-            // Find this result's position in the array
-            const currentKey = `${index}-${resultIndex}`;
-            const position = allKeys.indexOf(currentKey);
-            if (position !== -1 && position < 9) {
-              displayNumber = position + 1; // 1-based numbering
-            }
-            
             return (
-              <ToolResultRenderer 
+              <StructuredToolResultRenderer 
                 key={resultIndex} 
-                result={result} 
-                displayNumber={displayNumber} // Show 1-9 for selectable results
+                toolResult={toolResult} 
                 isExpanded={expandedToolResults?.has(resultKey) || false}
                 isFocused={focusedToolResult === resultKey}
                 onToggle={onToggleExpansion ? () => onToggleExpansion(resultKey) : undefined}
@@ -355,11 +314,10 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
 
 const ToolResultRenderer: React.FC<{ 
   result: string;
-  displayNumber?: number;
   isExpanded?: boolean;
   isFocused?: boolean;
   onToggle?: () => void;
-}> = ({ result, displayNumber, isExpanded = false, isFocused = false, onToggle }) => {
+}> = ({ result, isExpanded = false, isFocused = false, onToggle }) => {
   
   // Helper function to check if content should be collapsed
   // ALL tool results should be collapsed by default
@@ -369,7 +327,7 @@ const ToolResultRenderer: React.FC<{
 
   // Helper function to extract tool information from result
   const extractToolInfo = (result: string): { toolName: string; operation?: string; parameters: Record<string, any> } | null => {
-    if (!result.includes('succeeded:')) {
+    if (!result.split('\n')[0].includes('succeeded:')) {
       return null;
     }
 
@@ -417,7 +375,7 @@ const ToolResultRenderer: React.FC<{
     }
     return content;
   };
-  if (result.includes('succeeded:')) {
+  if (result.split('\n')[0].includes('succeeded:')) {
     const [header, ...contentLines] = result.split('\n');
     const jsonContent = contentLines.join('\n');
     
@@ -555,14 +513,14 @@ const ToolResultRenderer: React.FC<{
         
         // When collapsed, show specific format based on operation type
         if (shouldCollapse && !isExpanded) {
-          // Extract operation info for better display
-          const isUpdateOperation = parsed.result?.operation === 'update' || parsed.result?.message?.includes('Updated lines');
-          const isReadOperation = parsed.result?.content || (typeof parsed.result === 'string' && !parsed.result?.operation);
-          const isFileOperation = parsed.result?.operation === 'create' || parsed.result?.operation === 'write' || parsed.result?.operation === 'delete';
-          
           // Extract execution time for display
           const executionTime = parsed.result?.executionTime || parsed.executionTime;
           const timingText = executionTime ? ` (${executionTime} ms)` : '';
+          
+          // Extract operation info for better display (only for successful operations)
+          const isUpdateOperation = parsed.result?.operation === 'update' || parsed.result?.message?.includes('Updated lines');
+          const isReadOperation = parsed.result?.content || (typeof parsed.result === 'string' && !parsed.result?.operation);
+          const isFileOperation = parsed.result?.operation === 'create' || parsed.result?.operation === 'write' || parsed.result?.operation === 'delete';
           
           let summaryText = '';
           if (isUpdateOperation && parsed.result?.diff) {
@@ -738,6 +696,47 @@ const ToolResultRenderer: React.FC<{
         }
         
         const allErrorLines = errorContent.join('\n').split('\n');
+        
+        // Show collapsed by default for errors in this branch too
+        if (!isExpanded) {
+          // Extract execution time for error display
+          const executionTime = parsed.executionTime;
+          const timingText = executionTime ? ` (${executionTime} ms)` : '';
+          
+          // Show actual error message instead of generic "Read X lines"
+          let errorSummary = 'Tool execution failed';
+          if (parsed.stderr && parsed.stderr.trim()) {
+            errorSummary = parsed.stderr.trim().split('\n')[0]; // First line of stderr
+          } else if (parsed.error) {
+            errorSummary = parsed.error.split('\n')[0]; // First line of error
+          }
+          
+          // Truncate very long error messages for collapsed view
+          if (errorSummary.length > 80) {
+            errorSummary = errorSummary.substring(0, 77) + '...';
+          }
+          
+          return (
+            <Box 
+              flexDirection="column" 
+              marginLeft={2}
+              borderStyle={isFocused ? 'single' : undefined}
+              borderColor={isFocused ? 'cyan' : undefined}
+              paddingX={1}
+              paddingY={1}
+            >
+              <Box>
+                <Text>
+                  <Text color="gray">  ⎿  </Text>
+                  <Text color="red">
+                    {errorSummary}{timingText}
+                  </Text>
+                </Text>
+              </Box>
+            </Box>
+          );
+        }
+        
         const displayLines = allErrorLines.slice(0, 8); // Show first 8 lines for errors (more detail)
         
         return (
@@ -798,7 +797,7 @@ const ToolResultRenderer: React.FC<{
   }
   
   // Handle failed tool results
-  if (result.includes('failed:')) {
+  if (result.split('\n')[0].includes('failed:')) {
     const [header, ...contentLines] = result.split('\n');
     const jsonContent = contentLines.join('\n');
     
@@ -844,6 +843,19 @@ const ToolResultRenderer: React.FC<{
         const executionTime = parsed.executionTime;
         const timingText = executionTime ? ` (${executionTime} ms)` : '';
         
+        // Show actual error message instead of generic "Error: X lines"
+        let errorSummary = 'Tool execution failed';
+        if (parsed.stderr && parsed.stderr.trim()) {
+          errorSummary = parsed.stderr.trim().split('\n')[0]; // First line of stderr
+        } else if (parsed.error) {
+          errorSummary = parsed.error.split('\n')[0]; // First line of error
+        }
+        
+        // Truncate very long error messages for collapsed view
+        if (errorSummary.length > 80) {
+          errorSummary = errorSummary.substring(0, 77) + '...';
+        }
+        
         return (
           <Box 
             flexDirection="column" 
@@ -855,12 +867,9 @@ const ToolResultRenderer: React.FC<{
           >
             <Box>
               <Text>
-                {displayNumber && (
-                  <Text color="cyan" dimColor>[{displayNumber}] </Text>
-                )}
-                <Text color="gray">⎿  </Text>
-                <Text color="white">
-                  Error: {allErrorLines.length} lines{timingText}
+                <Text color="gray">  ⎿  </Text>
+                <Text color="red">
+                  {errorSummary}{timingText}
                 </Text>
               </Text>
             </Box>
@@ -972,6 +981,190 @@ const ToolResultRenderer: React.FC<{
       </Text>
     </Box>
   );
+};
+
+const StructuredToolResultRenderer: React.FC<{ 
+  toolResult: ToolResult;
+  isExpanded?: boolean;
+  isFocused?: boolean;
+  onToggle?: () => void;
+}> = ({ toolResult, isExpanded = false, isFocused = false, onToggle }) => {
+  
+  // Helper function to check if content should be collapsed
+  const shouldCollapseContent = (content: string) => {
+    return true; // Always collapse tool results by default
+  };
+
+  // Get the tool name from the result ID or tool registry
+  const toolName = toolResult.id.includes('_') ? 
+    toolResult.id.split('_')[0] : 
+    globalToolRegistry.getAll().find(t => t.name)?.name || 'unknown';
+
+  if (toolResult.success) {
+    // Handle successful execution
+    let content = '';
+    if (toolResult.result) {
+      // For file operations, show the actual content, not JSON
+      if (typeof toolResult.result === 'string') {
+        content = toolResult.result;
+      } else if (toolResult.result && typeof toolResult.result === 'object') {
+        // If result has content property (like file read operations), show that
+        if (toolResult.result.content) {
+          content = toolResult.result.content;
+        } else if (toolResult.result.files && Array.isArray(toolResult.result.files)) {
+          // For file listing operations, format nicely
+          content = toolResult.result.files.join('\n');
+        } else if (toolResult.result.items && Array.isArray(toolResult.result.items)) {
+          // For directory listing operations (list_dir), format as tree structure
+          const formatDirectoryTree = (items: any[]) => {
+            let output: string[] = [];
+            
+            items.forEach((item, index) => {
+              const isLast = index === items.length - 1;
+              const prefix = isLast ? '└── ' : '├── ';
+              const icon = item.type === 'directory' ? '📁 ' : '📄 ';
+              
+              output.push(`${prefix}${icon}${item.name}`);
+            });
+            
+            return output.join('\n');
+          };
+          
+          content = formatDirectoryTree(toolResult.result.items);
+        } else {
+          // Fallback to JSON for other structured results
+          content = JSON.stringify(toolResult.result, null, 2);
+        }
+      }
+    }
+    
+    if (!content) return null;
+    
+    const shouldCollapse = shouldCollapseContent(content);
+    
+    // When collapsed, show specific format based on operation type
+    if (shouldCollapse && !isExpanded) {
+      // Extract operation info for better display (only for successful operations)
+      const isReadOperation = toolResult.result?.content || (typeof toolResult.result === 'string');
+      const isFileOperation = toolResult.result?.operation === 'create' || toolResult.result?.operation === 'write' || toolResult.result?.operation === 'delete';
+      
+      // Extract execution time for display
+      const timingText = toolResult.executionTime ? ` (${toolResult.executionTime} ms)` : '';
+      
+      let summaryText = '';
+      if (isReadOperation) {
+        // For read operations, show line count
+        const lines = content.split('\n').length;
+        summaryText = `Read ${lines} lines${timingText}`;
+      } else if (isFileOperation) {
+        // For file operations, show operation summary
+        const operation = toolResult.result.operation;
+        const filePath = toolResult.result.file_path || toolResult.result.path || 'unknown';
+        summaryText = `${operation.charAt(0).toUpperCase() + operation.slice(1)} ${filePath}${timingText}`;
+      } else if (toolResult.result?.items) {
+        // For directory listings
+        summaryText = `Found ${toolResult.result.items.length} lines${timingText}`;
+      } else {
+        // Default format
+        summaryText = `Found ${content.split('\n').length} lines${timingText}`;
+      }
+      
+      return (
+        <Box flexDirection="column">
+          <Box>
+            <Text>
+              <Text color="gray">  ⎿  </Text>
+              <Text color="gray">{summaryText}</Text>
+            </Text>
+          </Box>
+        </Box>
+      );
+    }
+    
+    // When expanded, show full content (implementation similar to current ToolResultRenderer)
+    return (
+      <Box 
+        flexDirection="column" 
+        marginLeft={2}
+        borderStyle={isFocused ? 'single' : undefined}
+        borderColor={isFocused ? 'cyan' : undefined}
+        paddingX={1}
+        paddingY={1}
+      >
+        {content.split('\n').map((line: string, lineIndex: number) => (
+          <Box key={lineIndex}>
+            <Text>
+              {lineIndex === 0 ? (
+                <>
+                  <Text>  </Text>
+                  <Text bold color="green">✓</Text>
+                  <Text> </Text>
+                </>
+              ) : (
+                <Text>      </Text>
+              )}
+              <Text>{line}</Text>
+            </Text>
+          </Box>
+        ))}
+      </Box>
+    );
+  } else {
+    // Handle execution errors
+    const timingText = toolResult.executionTime ? ` (${toolResult.executionTime} ms)` : '';
+    
+    // Show actual error message instead of generic "Tool execution failed"
+    let errorSummary = 'Tool execution failed';
+    if (toolResult.error) {
+      errorSummary = toolResult.error.split('\n')[0]; // First line of error
+    }
+    
+    // Truncate very long error messages for collapsed view
+    if (errorSummary.length > 80) {
+      errorSummary = errorSummary.substring(0, 77) + '...';
+    }
+    
+    if (!isExpanded) {
+      return (
+        <Box 
+          flexDirection="column" 
+          marginLeft={2}
+          borderStyle={isFocused ? 'single' : undefined}
+          borderColor={isFocused ? 'cyan' : undefined}
+          paddingX={1}
+          paddingY={1}
+        >
+          <Box>
+            <Text>
+              <Text color="gray">  ⎿  </Text>
+              <Text color="red">
+                {errorSummary}{timingText}
+              </Text>
+            </Text>
+          </Box>
+        </Box>
+      );
+    }
+    
+    // Expanded error view
+    return (
+      <Box 
+        flexDirection="column" 
+        marginLeft={2}
+        borderStyle={isFocused ? 'single' : undefined}
+        borderColor={isFocused ? 'cyan' : undefined}
+        paddingX={1}
+        paddingY={1}
+      >
+        <Text>
+          <Text>  </Text>
+          <Text bold color="red">✗</Text>
+          <Text color="gray">  </Text>
+          <Text color="red">{toolResult.error || 'Tool execution failed'}</Text>
+        </Text>
+      </Box>
+    );
+  }
 };
 
 export default React.memo(MessageRenderer);

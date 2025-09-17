@@ -639,7 +639,6 @@ const TerminalContent: React.FC<TerminalProps> = ({
       availableHeight={uiState.availableHeight}
       input={input}
       onInputChange={setInput}
-      isPasted={isPastedContent}
       cursorPosition={displayCursorPosition}
       pasteBlocks={pasteBlocks}
     />

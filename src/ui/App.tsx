@@ -25,7 +25,6 @@ interface AppProps {
   availableHeight?: number;
   input: string;
   onInputChange: (input: string) => void;
-  isPasted: boolean;
   cursorPosition: number;
   pasteBlocks: Array<{start: number, end: number, content: string}>;
 }
@@ -48,7 +47,6 @@ export const App: React.FC<AppProps> = ({
   availableHeight,
   input,
   onInputChange,
-  isPasted,
   cursorPosition,
   pasteBlocks
 }) => {
@@ -79,14 +77,12 @@ export const App: React.FC<AppProps> = ({
           />
         )}
 
-        {/* Processing Indicators */}
-        {isProcessing && !pendingPermission && (
-          <ProcessingIndicator />
-        )}
-        
-        {(isCompacting || context.isCompacting) && (
+        {/* Processing Indicators - Compacting has priority */}
+        {(isCompacting || context.isCompacting) && !pendingPermission ? (
           <CompactingIndicator />
-        )}
+        ) : isProcessing && !pendingPermission ? (
+          <ProcessingIndicator />
+        ) : null}
 
         {/* Input Handler */}
         {!pendingPermission && (
@@ -94,7 +90,6 @@ export const App: React.FC<AppProps> = ({
             <InputHandler 
               input={input} 
               onInputChange={onInputChange} 
-              isPasted={isPasted} 
               cursorPosition={cursorPosition}
               pasteBlocks={pasteBlocks}
             />
@@ -142,13 +137,13 @@ const ProcessingIndicator = () => {
 
 const CompactingIndicator = () => {
   const messages = [
-    "Folding conversation origami...",
-    "Squishing chat bubbles...",
-    "Condensing digital chatter...",
-    "Compressing memory lanes...",
-    "Tidying up the thought threads...",
-    "Shrinking the word warehouse...",
-    "Packing conversation luggage..."
+    "folding conversation origami...",
+    "squishing chat bubbles...",
+    "condensing digital chatter...",
+    "compressing memory lanes...",
+    "tidying up the thought threads...",
+    "shrinking the word warehouse...",
+    "packing conversation luggage..."
   ];
   
   const message = messages[Math.floor(Math.random() * messages.length)];
@@ -156,7 +151,7 @@ const CompactingIndicator = () => {
   return (
     <Box marginTop={1}>
       <Text color="yellow">
-        <Spinner type="dots" /> {message}
+        <Spinner type="dots" /> Compacting - {message}
       </Text>
     </Box>
   );

@@ -2,6 +2,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
+  toolResults?: ToolResult[]; // For system messages containing tool results
 }
 
 export interface ToolCall {

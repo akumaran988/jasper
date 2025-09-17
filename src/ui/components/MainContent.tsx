@@ -29,8 +29,8 @@ export const MainContent = ({
 }: MainContentProps) => {
   const streamingContext = useStreamingContext();
 
-  // Filter messages (same as before)
-  const filteredMessages = context.messages.filter(m => 
+  // Filter messages from allMessages to show compaction tool calls
+  const filteredMessages = context.allMessages.filter(m => 
     m.role !== 'system' || m.content.startsWith('Tool execution results:')
   );
 
@@ -55,6 +55,7 @@ export const MainContent = ({
           <WelcomeMessage />
         </Box>
       )}
+
 
       {/* Completed Messages - Use Static component like gemini-cli */}
       {/* Only remount when historyRemountKey changes due to terminal resize */}

@@ -1,18 +1,15 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import chalk from 'chalk';
 
 interface InputHandlerProps {
   input: string;
   onInputChange: (input: string) => void;
-  isPasted?: boolean;
   cursorPosition?: number;
   pasteBlocks?: Array<{start: number, end: number, content: string}>;
 }
 
 const InputHandler: React.FC<InputHandlerProps> = ({ 
   input, 
-  isPasted = false, 
   cursorPosition = 0, 
   pasteBlocks = [] 
 }) => {
@@ -48,7 +45,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const sortedBlocks = [...pasteBlocks].sort((a, b) => b.start - a.start);
     
     // Replace each large paste block with its indicator
-    sortedBlocks.forEach((block, index) => {
+    sortedBlocks.forEach((block) => {
       // Only show compact display for blocks >1000 chars
       if (block.content.length > 1000) {
         const blockLines = block.content.split(/\r\n|\r|\n/);

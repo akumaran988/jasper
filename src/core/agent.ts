@@ -1,4 +1,4 @@
-import { LLMProvider, Message, ConversationContext, AIResponse, ToolCall, ToolResult } from '../types/index.js';
+import { LLMProvider, ConversationContext, AIResponse, ToolCall, ToolResult } from '../types/index.js';
 import { globalToolRegistry } from './tools.js';
 import { countConversationTokens, shouldCompactConversation, createConversationSummary } from '../utils/tokenCounter.js';
 
@@ -183,41 +183,14 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
   }
 
   private addToolResults(toolResults: ToolResult[]): void {
-    const resultsMessage = toolResults.map(result => {
-      // Get the tool name from the result ID or tool registry
-      const toolName = result.id.includes('_') ? 
-        result.id.split('_')[0] : 
-        globalToolRegistry.getAll().find(t => t.name)?.name || 'unknown';
-      
-      if (result.success) {
-        // Always format results as JSON for consistent parsing in the renderer
-        const resultWithTiming = {
-          ...result.result,
-          executionTime: result.executionTime
-        };
-        const jsonResult = JSON.stringify(resultWithTiming, null, 2);
-        return `🔧 ${toolName} succeeded:\n${jsonResult}`;
-      } else {
-        // For failed results, also format as JSON for consistent parsing
-        const errorResult = {
-          success: false,
-          error: result.error,
-          stderr: result.result?.stderr || '',
-          command: result.result?.command || '',
-          exitCode: result.result?.exitCode || 1,
-          stack: result.result?.stack || '',
-          executionTime: result.executionTime
-        };
-        const jsonResult = JSON.stringify(errorResult, null, 2);
-        return `🔧 ${toolName} failed:\n${jsonResult}`;
-      }
-    }).join('\n\n');
-
+    // Create a clean structured message with tool results
     const message = {
       role: 'system' as const,
-      content: `Tool execution results:\n${resultsMessage}`,
+      content: `Tool execution results: ${toolResults.length} results`,
+      toolResults: toolResults,
       timestamp: new Date()
     };
+    
     this.context.messages.push(message);
     this.context.allMessages.push(message);
     this.updateTokenCount();
@@ -254,10 +227,35 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
         return; // Not enough messages to compact
       }
 
-      // Create summary of conversation
+      const originalTokenCount = this.context.tokenCount;
+      const compactedMessageCount = messagesToCompact.length;
+
+      // Create summary of conversation - target 1/4 of token limit (2500 tokens max)
       const summary = await createConversationSummary(messagesToCompact, this.llmProvider);
       
-      // Store the compacted summary
+      // Add compaction as a visible tool call in the conversation
+      const compactionToolResult = {
+        id: `compaction_${Date.now()}`,
+        success: true,
+        result: {
+          operation: "compact_conversation",
+          messagesCompacted: compactedMessageCount,
+          originalTokens: originalTokenCount,
+          summary: summary,
+          targetTokenLimit: 2500
+        },
+        executionTime: 1
+      };
+
+      // Add the compaction tool result to allMessages (UI display) but not to messages (AI context)
+      const compactionMessage = {
+        role: 'system' as const,
+        content: `Tool execution results:\n🔧 conversation_compactor succeeded:\n${JSON.stringify(compactionToolResult.result, null, 2)}`,
+        timestamp: new Date()
+      };
+      this.context.allMessages.push(compactionMessage);
+      
+      // Store the compacted summary for reference
       this.context.compactedSummary = summary;
       this.context.lastCompactionIndex = this.context.allMessages.length;
 
@@ -287,6 +285,19 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
 
     } catch (error) {
       console.warn('Failed to compact conversation:', error);
+      
+      // Add failed compaction tool result
+      const failedCompactionMessage = {
+        role: 'system' as const,
+        content: `Tool execution results:\n🔧 conversation_compactor failed:\n${JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          executionTime: 1
+        }, null, 2)}`,
+        timestamp: new Date()
+      };
+      this.context.allMessages.push(failedCompactionMessage);
+      
       // Notify UI that compaction failed/ended
       if (this.onContextUpdate) {
         this.onContextUpdate({ ...this.context, isCompacting: false });
@@ -351,7 +362,7 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
           for (const toolCall of aiResponse.tool_calls) {
             // Ensure every tool call has a unique ID
             if (!toolCall.id) {
-              toolCall.id = `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+              toolCall.id = `tool_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
             }
             // Add individual tool call message
             const toolCallMessage = {
@@ -373,6 +384,7 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
             if (permission) {
               // Execute this single tool call
               const toolResults = await globalToolRegistry.executeMultiple([toolCall]);
+              
               this.addToolResults(toolResults);
               
               // Notify UI of tool result immediately
@@ -391,7 +403,7 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
             } else {
               // Add a denial result for this specific tool
               this.addToolResults([{
-                id: toolCall.id || 'permission_denied',
+                id: `${toolCall.name}_permission_denied_${Date.now()}`,
                 success: false,
                 error: 'User denied permission to execute this tool',
                 result: null
@@ -453,7 +465,7 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
     return true;
   }
 
-  private isCriticalFailure(result: ToolResult): boolean {
+  private isCriticalFailure(_result: ToolResult): boolean {
     // Define what constitutes a critical failure
     // For now, we'll be lenient and not treat any single failure as critical
     return false;
