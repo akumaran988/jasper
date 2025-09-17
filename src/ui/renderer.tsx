@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { Message, ToolResult } from '../types/index.js';
+import { Message, ToolResult, CompactionResult } from '../types/index.js';
 import MarkdownRenderer from './markdown.js';
 import { displayRegistry } from '../display/registry.js';
 import { DisplayContext } from '../display/types.js';
 import { getLogger } from '../utils/logger.js';
 import { globalToolRegistry } from '../core/tools.js';
+import CompactionSummaryRenderer from './components/CompactionSummaryRenderer.js';
 
 // Helper function for tool-specific permission messages
 const getToolPermissionMessage = (toolName: string, params: any, result: any): string | null => {
@@ -244,7 +245,18 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
   };
 
   const renderSystemMessage = () => {
-    // Handle compacted conversation summary
+    // Handle new structured compaction messages
+    if (message.compactionResult) {
+      return (
+        <CompactionSummaryRenderer 
+          compactionResult={message.compactionResult}
+          isExpanded={expandedToolResults?.has(`compaction-${index}`) || false}
+          onToggleExpand={onToggleExpansion ? () => onToggleExpansion(`compaction-${index}`) : undefined}
+        />
+      );
+    }
+    
+    // Handle legacy compacted conversation summary (fallback)
     if (message.content.startsWith('======================================== Previous Conversation Compacted ========================================')) {
       const summaryContent = message.content.replace('======================================== Previous Conversation Compacted ========================================\n', '');
       

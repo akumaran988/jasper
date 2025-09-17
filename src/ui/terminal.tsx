@@ -65,10 +65,10 @@ const TerminalContent: React.FC<TerminalProps> = ({
   const [lastPasteTime, setLastPasteTime] = useState(0);
   const pasteTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Terminal size management (gemini-cli pattern)
+  // Terminal size management (gemini-cli pattern) - Increased buffer for large conversations
   const [terminalSize, setTerminalSize] = useState({
     columns: (process.stdout.columns || 60) - TERMINAL_PADDING_X,
-    rows: process.stdout.rows || 20,
+    rows: process.stdout.rows || 200, // Increased from 20 to 200 for large buffer
   });
   
   const isInitialMount = React.useRef(true);
@@ -77,7 +77,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
     function updateSize() {
       setTerminalSize({
         columns: (process.stdout.columns || 60) - TERMINAL_PADDING_X,
-        rows: process.stdout.rows || 20,
+        rows: process.stdout.rows || 200, // Increased from 20 to 200 for large buffer
       });
     }
 
@@ -121,7 +121,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
   const uiState: UIState = useMemo(() => {
     const widthFraction = 0.9;
     const mainAreaWidth = Math.floor(terminalSize.columns * widthFraction);
-    const calculatedHeight = terminalSize.rows - 10; // Account for input and padding
+    const calculatedHeight = Math.max(terminalSize.rows - 10, 10000); // Ensure large buffer, minimum 10k lines
     
     return {
       terminalWidth: terminalSize.columns,
@@ -207,6 +207,14 @@ const TerminalContent: React.FC<TerminalProps> = ({
     if (key.ctrl && inputChar === 'h') {
       setConstrainHeight(!constrainHeight);
       logger.info('Height constraint toggled', { constrainHeight: !constrainHeight });
+      return;
+    }
+
+    // Ctrl+R to expand/collapse compaction summaries
+    if (key.ctrl && inputChar === 'r') {
+      // TODO: Implement compaction summary expansion toggle
+      // This would require tracking expansion state and passing toggle callback
+      logger.info('Ctrl+R pressed - compaction summary expansion toggle');
       return;
     }
 
@@ -639,7 +647,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
       availableHeight={uiState.availableHeight}
       input={input}
       onInputChange={setInput}
-      cursorPosition={displayCursorPosition}
+      cursorPosition={cursorPosition}
       pasteBlocks={pasteBlocks}
     />
   );

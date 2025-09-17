@@ -29,9 +29,12 @@ export const MainContent = ({
 }: MainContentProps) => {
   const streamingContext = useStreamingContext();
 
-  // Filter messages from allMessages to show compaction tool calls
+  // Filter messages from allMessages to show compaction tool calls and compaction summaries
   const filteredMessages = context.allMessages.filter(m => 
-    m.role !== 'system' || m.content.startsWith('Tool execution results:')
+    m.role !== 'system' || 
+    m.content.startsWith('Tool execution results:') ||
+    m.content.startsWith('===================== Previous Conversation Compacted =====================') ||
+    m.compactionResult // New structured compaction messages
   );
 
   // Separate completed messages from streaming message

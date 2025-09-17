@@ -1,6 +1,6 @@
-import { LLMProvider, ConversationContext, AIResponse, ToolCall, ToolResult } from '../types/index.js';
+import { LLMProvider, ConversationContext, AIResponse, ToolCall, ToolResult, CompactionResult } from '../types/index.js';
 import { globalToolRegistry } from './tools.js';
-import { countConversationTokens, shouldCompactConversation, createConversationSummary } from '../utils/tokenCounter.js';
+import { countConversationTokens, shouldCompactConversation, createAdvancedCompactionResult, getActualLLMTokenCount } from '../utils/tokenCounter.js';
 
 export class ConversationAgent {
   private llmProvider: LLMProvider;
@@ -54,6 +54,8 @@ TOOL EXECUTION PERMISSIONS:
 - Only approved tools will execute
 
 CRITICAL: should_continue FIELD CONTROLS CONVERSATION LOOP:
+IMPORTANT: should_continue is a TECHNICAL FIELD - NEVER mention it in your content to users!
+
 - Set should_continue=true when:
   * You need to execute tools and process their results
   * Task requires multiple steps or follow-up actions
@@ -63,6 +65,8 @@ CRITICAL: should_continue FIELD CONTROLS CONVERSATION LOOP:
   * No further processing needed
   * User question is fully answered
   * Error state that can't be recovered
+
+DO NOT mention should_continue in your "content" field - users should never see this technical detail.
 
 Available Tools:
 ${this.context.tools.map(tool => {
@@ -77,7 +81,7 @@ CRITICAL: You MUST respond with ONLY valid JSON. Do not include any text before 
 
 Your response must be a single valid JSON object with this exact structure:
 {
-  "content": "Your response to user (explain what you're doing/planning)",
+  "content": "Your response to user (explain what you're doing/planning) - NEVER mention should_continue here!",
   "tool_calls": [
     {
       "id": "call_" + timestamp + "_" + random_string,
@@ -86,17 +90,18 @@ Your response must be a single valid JSON object with this exact structure:
     }
   ],
   "should_continue": true/false,
-  "reasoning": "Why you chose these actions and should_continue value"
+  "reasoning": "Why you chose these actions and should_continue value (internal only)"
 }
 
 IMPORTANT RULES:
 - Start your response directly with { and end with }
 - No "ASSISTANT:" prefix, no markdown code blocks, no additional text
 - ALWAYS use should_continue correctly to control conversation flow
-- Be explicit about what you're doing and why
+- Be explicit about what you're doing and why in "content"
 - User must approve tools - explain what each tool will do
 - Generate unique IDs for tool calls (timestamp + random)
 - If tools fail, explain and set should_continue appropriately
+- NEVER mention should_continue, reasoning, or any technical JSON fields in your "content" - users only see "content"
 
 TOOL USAGE EXAMPLES:
 User: "Can you ping google for me?"
@@ -133,12 +138,20 @@ CORRECT Response:
   "reasoning": "User wants to create a README file, using file_ops with operation=create"
 }
 
-WRONG Response (DON'T DO THIS):
+WRONG Response (DON'T DO THIS - missing tool calls):
 {
   "content": "I can help with that. I will use the bash tool to ping google.com.",
   "tool_calls": [],
   "should_continue": false,
   "reasoning": "Just explaining what I would do"
+}
+
+WRONG Response (DON'T DO THIS - exposing technical fields to user):
+{
+  "content": "I found the files. I will set should_continue to false since the task is complete.",
+  "tool_calls": [],
+  "should_continue": false,
+  "reasoning": "Task completed"
 }
 
 CRITICAL: When user asks you to DO something (ping, list files, run commands, etc.), you MUST include the actual tool_calls in your response. Don't just talk about what you would do - actually do it by calling the appropriate tools!`;
@@ -201,14 +214,15 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
   }
 
   private async checkAndCompactConversation(): Promise<void> {
-    if (shouldCompactConversation(this.context.messages, 10000)) {
+    // Use higher token limit like Claude Code - only compact when conversation gets very large
+    if (shouldCompactConversation(this.context.messages, 25000)) {
       await this.compactConversation();
     }
   }
 
   private async compactConversation(): Promise<void> {
-    // Don't compact if we've already compacted recently (less than 5 messages ago)
-    if (this.context.allMessages.length - this.context.lastCompactionIndex < 5) {
+    // Don't compact if we've already compacted recently (less than 10 messages ago, like Claude Code)
+    if (this.context.allMessages.length - this.context.lastCompactionIndex < 10) {
       return;
     }
 
@@ -224,53 +238,48 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
       );
 
       if (messagesToCompact.length < 3) {
+        // Notify UI that compaction ended
+        if (this.onContextUpdate) {
+          this.onContextUpdate({ ...this.context, isCompacting: false });
+        }
         return; // Not enough messages to compact
       }
 
-      const originalTokenCount = this.context.tokenCount;
-      const compactedMessageCount = messagesToCompact.length;
+      // Generate advanced compaction result with AI-powered summary (max 5 iterations)
+      const compactionResult = await createAdvancedCompactionResult(
+        messagesToCompact, 
+        this.llmProvider,
+        5 // Maximum AI iterations for compaction
+      );
 
-      // Create summary of conversation - target 1/4 of token limit (2500 tokens max)
-      const summary = await createConversationSummary(messagesToCompact, this.llmProvider);
-      
-      // Add compaction as a visible tool call in the conversation
-      const compactionToolResult = {
-        id: `compaction_${Date.now()}`,
-        success: true,
-        result: {
-          operation: "compact_conversation",
-          messagesCompacted: compactedMessageCount,
-          originalTokens: originalTokenCount,
-          summary: summary,
-          targetTokenLimit: 2500
-        },
-        executionTime: 1
-      };
-
-      // Add the compaction tool result to allMessages (UI display) but not to messages (AI context)
+      // Create compaction message for UI display
       const compactionMessage = {
         role: 'system' as const,
-        content: `Tool execution results:\n🔧 conversation_compactor succeeded:\n${JSON.stringify(compactionToolResult.result, null, 2)}`,
+        content: '===================== Previous Conversation Compacted =====================',
+        compactionResult: compactionResult,
         timestamp: new Date()
       };
+
+      // Add to allMessages for UI display (not to messages for AI context)
       this.context.allMessages.push(compactionMessage);
       
       // Store the compacted summary for reference
-      this.context.compactedSummary = summary;
+      this.context.compactedSummary = compactionResult.summary;
       this.context.lastCompactionIndex = this.context.allMessages.length;
 
-      // Replace messages for AI (keep system prompt + summary + recent messages)
+      // Replace messages for AI context (keep system prompt + summary + recent messages)
       const systemPrompt = this.context.messages.find(m => 
         m.role === 'system' && m.content.startsWith('You are Jasper')
       );
       
       const recentMessages = this.context.messages.slice(-3); // Keep last 3 messages
       
+      // Create AI context with compacted summary
       this.context.messages = [
         ...(systemPrompt ? [systemPrompt] : []),
         {
           role: 'system' as const,
-          content: `======================================== Previous Conversation Compacted ========================================\n${summary}`,
+          content: `======================================== Previous Conversation Compacted ========================================\n${compactionResult.summary}\n\nTool actions taken:\n${compactionResult.toolSummaries.map(tool => `- ${tool.summary}`).join('\n')}`,
           timestamp: new Date()
         },
         ...recentMessages
@@ -286,14 +295,21 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
     } catch (error) {
       console.warn('Failed to compact conversation:', error);
       
-      // Add failed compaction tool result
+      // Create failed compaction result
+      const failedCompactionResult: CompactionResult = {
+        summary: `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,
+        toolSummaries: [],
+        messagesCompacted: 0,
+        originalTokens: this.context.tokenCount,
+        compactedTokens: 0,
+        timestamp: new Date()
+      };
+
+      // Add failed compaction message to UI
       const failedCompactionMessage = {
         role: 'system' as const,
-        content: `Tool execution results:\n🔧 conversation_compactor failed:\n${JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-          executionTime: 1
-        }, null, 2)}`,
+        content: '===================== Conversation Compaction Failed =====================',
+        compactionResult: failedCompactionResult,
         timestamp: new Date()
       };
       this.context.allMessages.push(failedCompactionMessage);
@@ -307,11 +323,32 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
 
   async processMessage(userInput: string): Promise<ConversationContext> {
     this.addUserMessage(userInput);
-    this.context.currentIteration = 0;
     
-    // Check if we need to compact the conversation before processing
-    await this.checkAndCompactConversation();
-
+    // Check if this is a continuation request after hitting iteration limit
+    const isContinueRequest = this.isContinueRequest(userInput);
+    if (isContinueRequest) {
+      // Reset iteration counter to allow another full cycle
+      this.context.currentIteration = 0;
+      
+      // User requested continuation - reset iteration counter
+      
+      // Add a system message to acknowledge the continuation
+      this.addAssistantMessage({
+        content: "Continuing with the task. I'll proceed with another round of iterations to help complete your request.",
+        tool_calls: [],
+        reasoning: "User requested continuation after iteration limit",
+        should_continue: true
+      });
+      
+      // Notify UI of context update
+      if (this.onContextUpdate) {
+        this.onContextUpdate({ ...this.context });
+      }
+    } else {
+      // Normal message processing - reset iteration counter
+      this.context.currentIteration = 0;
+    }
+    
     while (this.context.currentIteration < this.context.maxIterations) {
       this.context.currentIteration++;
       
@@ -392,8 +429,7 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
                 this.onContextUpdate({ ...this.context });
               }
               
-              // Check for compaction after each tool execution
-              await this.checkAndCompactConversation();
+              // Note: Compaction will happen at the end of processMessage, not after each tool
               
               // Check if this tool failed critically
               const criticalFailures = toolResults.filter(result => !result.success && this.isCriticalFailure(result));
@@ -414,8 +450,7 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
                 this.onContextUpdate({ ...this.context });
               }
               
-              // Check for compaction after permission denial
-              await this.checkAndCompactConversation();
+              // Note: Compaction will happen at the end of processMessage, not after each denial
               
               // Continue to ask for permission for remaining tools
             }
@@ -447,12 +482,16 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
 
     if (this.context.currentIteration >= this.context.maxIterations) {
       this.addAssistantMessage({
-        content: "I've reached the maximum number of iterations for this conversation. The task may be too complex or require user intervention.",
+        content: "I've reached the maximum number of iterations for this conversation. The task may be too complex or require user intervention.\n\nIf you'd like me to continue working on this task, just type 'continue' and I'll start another round of iterations.",
         tool_calls: [],
         reasoning: "Maximum iterations reached",
         should_continue: false
       });
     }
+
+    // Check if we need to compact the conversation AFTER processing the user's request
+    // This ensures compaction happens after the AI has completed its response, not before
+    await this.checkAndCompactConversation();
 
     return this.context;
   }
@@ -469,6 +508,30 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
     // Define what constitutes a critical failure
     // For now, we'll be lenient and not treat any single failure as critical
     return false;
+  }
+
+  private isContinueRequest(userInput: string): boolean {
+    const trimmedInput = userInput.trim().toLowerCase();
+    
+    // Check if this is a continuation request
+    const continueKeywords = [
+      'continue',
+      'continue please',
+      'please continue', 
+      'keep going',
+      'go on',
+      'proceed',
+      'carry on',
+      'resume',
+      'don\'t stop',
+      'keep working'
+    ];
+    
+    return continueKeywords.some(keyword => 
+      trimmedInput === keyword || 
+      trimmedInput.startsWith(keyword + ' ') ||
+      trimmedInput.endsWith(' ' + keyword)
+    );
   }
 
   getContext(): ConversationContext {

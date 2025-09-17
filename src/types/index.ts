@@ -1,8 +1,25 @@
+export interface CompactionToolSummary {
+  toolName: string;
+  summary: string; // e.g., "Read src/core/agent.ts (487 lines)"
+  success: boolean;
+  executionTime?: number;
+}
+
+export interface CompactionResult {
+  summary: string; // Conversational summary of what happened
+  toolSummaries: CompactionToolSummary[]; // Individual tool execution summaries
+  messagesCompacted: number;
+  originalTokens: number;
+  compactedTokens: number;
+  timestamp: Date;
+}
+
 export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
   toolResults?: ToolResult[]; // For system messages containing tool results
+  compactionResult?: CompactionResult; // For compaction summary messages
 }
 
 export interface ToolCall {

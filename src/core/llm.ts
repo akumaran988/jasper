@@ -13,78 +13,112 @@ export class GeminiProvider implements LLMProvider {
   }
 
   async generateResponse(messages: Message[], tools: Tool[]): Promise<AIResponse> {
-    try {
-      const prompt = this.buildPrompt(messages, tools);
-      
-      const response = await this.client.models.generateContent({
-        model: this.modelName,
-        contents: [{
-          role: 'user',
-          parts: [{ text: prompt }]
-        }]
-      });
-
-      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      
-      const logger = getLogger();
-      logger.debug('LLM raw response', {
-        responseLength: text.length,
-        responsePreview: text.substring(0, 200) + (text.length > 200 ? '...' : '')
-      });
-
-      let parsedResponse: any = {};
+    const maxRetries = 3;
+    let lastError: string = '';
+    const logger = getLogger();
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // First try to parse as direct JSON
-        parsedResponse = JSON.parse(text);
-      } catch (parseError) {
-        logger.debug('Direct JSON parsing failed, trying cleanup', { 
-          error: parseError instanceof Error ? parseError.message : 'Unknown error',
-          textPreview: text.substring(0, 100)
-        });
+        const prompt = this.buildPrompt(messages, tools);
         
-        // Try to clean up malformed JSON (common issue with Gemini)
+        // If this is a retry, add context about the previous failed response
+        let finalPrompt = prompt;
+        if (attempt > 1) {
+          finalPrompt += `\n\nIMPORTANT: Your previous response could not be parsed as valid JSON. Please ensure you respond with ONLY valid JSON in the exact format specified. Do not include any text before or after the JSON. Here was the error: ${lastError}`;
+        }
+        
+        const response = await this.client.models.generateContent({
+          model: this.modelName,
+          contents: [{
+            role: 'user',
+            parts: [{ text: finalPrompt }]
+          }]
+        });
+
+        const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        logger.debug('LLM raw response', {
+          attempt,
+          responseLength: text.length,
+          responsePreview: text.substring(0, 200) + (text.length > 200 ? '...' : '')
+        });
+
+        let parsedResponse: any = {};
+        let parseSuccess = false;
+        
         try {
-          // Fix common JSON issues: actual newlines in JSON strings
-          let cleanedText = text
-            .replace(/\n/g, '\\n')    // Replace actual newlines with escaped ones
-            .replace(/\r/g, '\\r')    // Replace actual carriage returns  
-            .replace(/\t/g, '\\t')    // Replace actual tabs
-            .trim();                  // Remove leading/trailing whitespace
+          // First try to parse as direct JSON
+          parsedResponse = JSON.parse(text);
+          parseSuccess = true;
+        } catch (parseError) {
+          lastError = parseError instanceof Error ? parseError.message : 'Unknown error';
+          logger.debug('Direct JSON parsing failed, trying cleanup', { 
+            error: lastError,
+            textPreview: text.substring(0, 100)
+          });
           
-          parsedResponse = JSON.parse(cleanedText);
-          logger.debug('Successfully parsed cleaned JSON');
-        } catch (cleanupError) {
-          // If cleanup fails, check for markdown code block
-          if (text.includes('```json') && text.includes('```')) {
-            const jsonMatch = text.match(/```json\s*\n([\s\S]*?)\n```/);
-            if (jsonMatch && jsonMatch[1]) {
-              try {
-                parsedResponse = JSON.parse(jsonMatch[1]);
-                logger.debug('Successfully parsed JSON from markdown block');
-              } catch (innerError) {
-                logger.debug('All JSON parsing attempts failed, using raw text');
-                parsedResponse = { content: text };
+          // Try to clean up malformed JSON (common issue with Gemini)
+          try {
+            // Fix common JSON issues: actual newlines in JSON strings
+            let cleanedText = text
+              .replace(/\n/g, '\\n')    // Replace actual newlines with escaped ones
+              .replace(/\r/g, '\\r')    // Replace actual carriage returns  
+              .replace(/\t/g, '\\t')    // Replace actual tabs
+              .trim();                  // Remove leading/trailing whitespace
+            
+            parsedResponse = JSON.parse(cleanedText);
+            parseSuccess = true;
+            logger.debug('Successfully parsed cleaned JSON');
+          } catch (cleanupError) {
+            // If cleanup fails, check for markdown code block
+            if (text.includes('```json') && text.includes('```')) {
+              const jsonMatch = text.match(/```json\s*\n([\s\S]*?)\n```/);
+              if (jsonMatch && jsonMatch[1]) {
+                try {
+                  parsedResponse = JSON.parse(jsonMatch[1]);
+                  parseSuccess = true;
+                  logger.debug('Successfully parsed JSON from markdown block');
+                } catch (innerError) {
+                  logger.debug('All JSON parsing attempts failed');
+                  lastError = `Parse failed: ${innerError instanceof Error ? innerError.message : 'Unknown error'}`;
+                }
               }
-            } else {
-              parsedResponse = { content: text };
             }
-          } else {
-            logger.debug('No valid JSON found, using raw text as content');
-            parsedResponse = { content: text };
           }
         }
-      }
 
-      return {
-        content: parsedResponse.content || text,
-        tool_calls: parsedResponse.tool_calls || [],
-        should_continue: parsedResponse.should_continue !== false,
-        reasoning: parsedResponse.reasoning
-      };
-    } catch (error) {
-      console.error('Gemini API error:', error);
-      throw error;
+        // If parsing succeeded or this is the final attempt, return the result
+        if (parseSuccess) {
+          return {
+            content: parsedResponse.content || '',
+            tool_calls: parsedResponse.tool_calls || [],
+            should_continue: parsedResponse.should_continue !== false,
+            reasoning: parsedResponse.reasoning
+          };
+        } else if (attempt === maxRetries) {
+          // Final attempt failed, return a recoverable response
+          logger.debug('All parsing attempts failed, returning fallback response');
+          return {
+            content: "I apologize, but I'm having trouble formatting my response correctly. Could you please rephrase your request?",
+            tool_calls: [],
+            should_continue: false,
+            reasoning: "JSON parsing failed after multiple attempts"
+          };
+        }
+        
+        // Continue to next attempt
+        logger.debug(`Attempt ${attempt} failed, retrying...`);
+        
+      } catch (error) {
+        if (attempt === maxRetries) {
+          console.error('Gemini API error:', error);
+          throw error;
+        }
+        logger.debug(`API error on attempt ${attempt}, retrying...`, { error });
+      }
     }
+    
+    // This should never be reached, but just in case
+    throw new Error('All retry attempts failed');
   }
 
   private buildPrompt(messages: Message[], tools: Tool[]): string {
@@ -121,6 +155,27 @@ Conversation history:
 
     messages.forEach(msg => {
       prompt += `${msg.role.toUpperCase()}: ${msg.content}\n`;
+      
+      // Include structured tool results if present
+      if (msg.toolResults && msg.toolResults.length > 0) {
+        prompt += `TOOL_RESULTS: [\n`;
+        msg.toolResults.forEach(result => {
+          prompt += `  {\n`;
+          prompt += `    "id": "${result.id}",\n`;
+          prompt += `    "success": ${result.success},\n`;
+          if (result.success && result.result) {
+            prompt += `    "result": ${JSON.stringify(result.result, null, 4)},\n`;
+          }
+          if (result.error) {
+            prompt += `    "error": "${result.error}",\n`;
+          }
+          if (result.executionTime) {
+            prompt += `    "executionTime": ${result.executionTime}\n`;
+          }
+          prompt += `  },\n`;
+        });
+        prompt += `]\n`;
+      }
     });
 
     return prompt;

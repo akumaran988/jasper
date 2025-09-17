@@ -68,8 +68,39 @@ const InputHandler: React.FC<InputHandlerProps> = ({
   // Calculate which lines to show with smart scrolling based on cursor position
   const displayTotalLines = displayLines.length;
   
-  // Use cursor position directly since we simplified the logic
-  const displayCursorPos = cursorPosition;
+  // Calculate proper cursor position accounting for paste block compaction
+  const getDisplayCursorPosition = () => {
+    if (pasteBlocks.length === 0) {
+      return cursorPosition;
+    }
+    
+    let adjustedPos = cursorPosition;
+    const sortedBlocks = [...pasteBlocks].sort((a, b) => a.start - b.start);
+    
+    for (const block of sortedBlocks) {
+      if (block.content.length > 1000) {
+        const blockLines = block.content.split(/\r\n|\r|\n/);
+        const indicator = `[Pasted ${blockLines.length > 1 ? `${blockLines.length} lines` : `${block.content.length} chars`}]`;
+        const originalLength = block.end - block.start;
+        const newLength = indicator.length;
+        const adjustment = newLength - originalLength;
+        
+        if (cursorPosition >= block.end) {
+          // Cursor is after this block - apply the adjustment
+          adjustedPos += adjustment;
+        } else if (cursorPosition >= block.start) {
+          // Cursor is within this block - position it at the end of the indicator
+          // This ensures when you type after a paste block, cursor appears after the indicator
+          adjustedPos = block.start + newLength;
+          break;
+        }
+      }
+    }
+    
+    return adjustedPos;
+  };
+  
+  const displayCursorPos = getDisplayCursorPosition();
   let cursorLine = 0;
   let charCount = 0;
   

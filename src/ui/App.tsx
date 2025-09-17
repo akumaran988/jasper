@@ -5,6 +5,7 @@ import { ConversationContext, PermissionContext, PermissionResponse, PermissionR
 import { MainContent } from './components/MainContent.js';
 import InputHandler from './input.js';
 import { useStreamingContext } from '../contexts/StreamingContext.js';
+import CompactionIndicator from './components/CompactionIndicator.js';
 
 interface AppProps {
   context: ConversationContext;
@@ -60,7 +61,7 @@ export const App: React.FC<AppProps> = ({
         terminalWidth={terminalWidth}
         terminalHeight={terminalHeight}
         mainAreaWidth={mainAreaWidth}
-        staticAreaMaxItemHeight={Math.max(terminalHeight * 4, 100)}
+        staticAreaMaxItemHeight={Math.max(terminalHeight * 50, 20000)}
         availableTerminalHeight={availableHeight}
         constrainHeight={constrainHeight}
         historyRemountKey={historyRemountKey}
@@ -79,7 +80,7 @@ export const App: React.FC<AppProps> = ({
 
         {/* Processing Indicators - Compacting has priority */}
         {(isCompacting || context.isCompacting) && !pendingPermission ? (
-          <CompactingIndicator />
+          <CompactionIndicator isVisible={true} stage="summarizing" />
         ) : isProcessing && !pendingPermission ? (
           <ProcessingIndicator />
         ) : null}
@@ -135,27 +136,6 @@ const ProcessingIndicator = () => {
   );
 };
 
-const CompactingIndicator = () => {
-  const messages = [
-    "folding conversation origami...",
-    "squishing chat bubbles...",
-    "condensing digital chatter...",
-    "compressing memory lanes...",
-    "tidying up the thought threads...",
-    "shrinking the word warehouse...",
-    "packing conversation luggage..."
-  ];
-  
-  const message = messages[Math.floor(Math.random() * messages.length)];
-  
-  return (
-    <Box marginTop={1}>
-      <Text color="yellow">
-        <Spinner type="dots" /> Compacting - {message}
-      </Text>
-    </Box>
-  );
-};
 
 const PermissionSelector = ({ pendingPermission, sessionApprovals, onPermissionResponse }: any) => {
   return (
