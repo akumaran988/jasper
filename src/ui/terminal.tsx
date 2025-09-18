@@ -9,7 +9,6 @@ import { useAutoScroll } from '../hooks/useAutoScroll.js';
 import { getLogger } from '../utils/logger.js';
 import { StreamingProvider, useStreamingContext } from '../contexts/StreamingContext.js';
 
-// Terminal sizing constants (following gemini-cli patterns)
 const TERMINAL_PADDING_X = 8;
 
 interface TerminalProps {
@@ -24,14 +23,12 @@ interface TerminalProps {
   onCompactConversation?: () => void;
 }
 
-// Streaming states for better UX (inspired by gemini-cli)
 enum StreamingState {
   Idle = 'idle',
   Responding = 'responding',
   WaitingForConfirmation = 'waiting_for_confirmation'
 }
 
-// UI State interface (following gemini-cli architecture)
 interface UIState {
   terminalWidth: number;
   terminalHeight: number;
@@ -65,7 +62,6 @@ const TerminalContent: React.FC<TerminalProps> = ({
   const [lastPasteTime, setLastPasteTime] = useState(0);
   const pasteTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Terminal size management (gemini-cli pattern) - Increased buffer for large conversations
   const [terminalSize, setTerminalSize] = useState({
     columns: (process.stdout.columns || 60) - TERMINAL_PADDING_X,
     rows: process.stdout.rows || 200, // Increased from 20 to 200 for large buffer
@@ -87,14 +83,14 @@ const TerminalContent: React.FC<TerminalProps> = ({
     };
   }, []);
 
-  // UI State management (gemini-cli architecture)
+  // UI State management
   const [constrainHeight, setConstrainHeight] = useState(true);
   const [historyRemountKey, setHistoryRemountKey] = useState(0);
   
-  // Refresh static content function (gemini-cli pattern)
+  // Refresh static content function
   const { stdout } = useStdout();
   const refreshStatic = useCallback(() => {
-    stdout.write(ansiEscapes.clearTerminal); // Clear terminal like gemini-cli
+    stdout.write(ansiEscapes.clearTerminal); // Clear terminal
     setHistoryRemountKey((prev) => prev + 1);
     logger.debug('Terminal refreshed due to resize', {
       columns: terminalSize.columns,
@@ -102,7 +98,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
     });
   }, [logger, terminalSize, stdout]);
   
-  // Terminal refresh on resize (gemini-cli exact pattern)
+  // Terminal refresh on resize
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -137,7 +133,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
     };
   }, [terminalSize, constrainHeight, isProcessing, pendingPermission, historyRemountKey]);
 
-  // Enhanced auto-scroll functionality with streaming support (gemini-cli inspired)
+  // Enhanced auto-scroll functionality with streaming support
   const [scrollState, scrollControls] = useAutoScroll(
     context.messages.length + (streamingContext.isStreaming ? 1 : 0), // Account for streaming messages
     isProcessing || streamingContext.isStreaming,
@@ -170,7 +166,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
     }
   }, [streamingContext.currentMessage, streamingContext.updateCount, scrollState.isAutoScrollEnabled, scrollState.isUserScrolling, scrollControls, logger]);
 
-  // Handle keyboard input (following gemini-cli patterns)
+  // Handle keyboard input
   useInput((inputChar: string, key: any) => {
     // Debug: Log all key events to see what's being received
     logger.debug('Key pressed:', { inputChar, key: Object.keys(key).filter(k => key[k]).join(',') });
@@ -186,7 +182,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
       return;
     }
 
-    // Enhanced scroll controls (gemini-cli pattern)
+    // Enhanced scroll controls
     if (key.ctrl && inputChar === 's') {
       // Ctrl+S to show more lines / toggle height constraint
       if (constrainHeight) {
@@ -218,7 +214,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
       return;
     }
 
-    // Enhanced navigation keys (gemini-cli pattern)
+    // Enhanced navigation keys
     if (key.ctrl && (inputChar === 'home' || key.home)) {
       setConstrainHeight(false); // Show full history
       logger.info('User pressed Ctrl+Home - scroll to top and show all');
@@ -617,7 +613,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
       // Send the message
       await onMessage(messageToSend);
       
-      // Enhanced post-message handling (gemini-cli pattern) - NO refreshStatic!
+      // Enhanced post-message handling - NO refreshStatic!
       setTimeout(() => {
         // Only auto-scroll if user is already at bottom, preserve manual scroll position
         if (scrollState.isAutoScrollEnabled) {

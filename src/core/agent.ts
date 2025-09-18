@@ -1,6 +1,7 @@
 import { LLMProvider, ConversationContext, AIResponse, ToolCall, ToolResult, CompactionResult } from '../types/index.js';
 import { globalToolRegistry } from './tools.js';
-import { countConversationTokens, shouldCompactConversation, createAdvancedCompactionResult, getActualLLMTokenCount } from '../utils/tokenCounter.js';
+import { countConversationTokens, getActualLLMTokenCount } from '../utils/tokenCounter.js';
+import { createCompactionStrategy, DEFAULT_COMPACTION_CONFIG, CompactionConfig } from '../utils/compactionStrategy.js';
 
 export class ConversationAgent {
   private llmProvider: LLMProvider;
@@ -10,18 +11,26 @@ export class ConversationAgent {
   private onContextUpdate?: (context: ConversationContext) => void;
   private lastApiCall: number = 0;
   private apiThrottleMs: number = 3000; // 3 seconds default
+  private compactionStrategy = createCompactionStrategy();
+  private compactionConfig: CompactionConfig = DEFAULT_COMPACTION_CONFIG;
 
   constructor(
     llmProvider: LLMProvider, 
     maxIterations: number = 10, 
     onRequestPermission?: (toolCall: ToolCall) => Promise<boolean>,
     apiThrottleMs: number = 3000,
-    onContextUpdate?: (context: ConversationContext) => void
+    onContextUpdate?: (context: ConversationContext) => void,
+    compactionConfig?: Partial<CompactionConfig>
   ) {
     this.llmProvider = llmProvider;
     this.onRequestPermission = onRequestPermission;
     this.onContextUpdate = onContextUpdate;
     this.apiThrottleMs = apiThrottleMs;
+    
+    // Merge custom compaction config with defaults
+    if (compactionConfig) {
+      this.compactionConfig = { ...DEFAULT_COMPACTION_CONFIG, ...compactionConfig };
+    }
     this.context = {
       messages: [],
       allMessages: [],
@@ -37,7 +46,7 @@ export class ConversationAgent {
   }
 
   private buildSystemPrompt(): string {
-    return `You are Jasper, a conversational AI development assistant similar to Claude Code. You help developers with their coding tasks through multi-step, tool-assisted conversations.
+    return `You are Jasper, a highly intelligent conversational AI development assistant. You help developers with their coding tasks through multi-step, tool-assisted conversations.
 
 CONVERSATION FLOW:
 1. You receive a user message and respond with content + optional tool calls
@@ -214,15 +223,14 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
   }
 
   private async checkAndCompactConversation(): Promise<void> {
-    // Use higher token limit like Claude Code - only compact when conversation gets very large
-    if (shouldCompactConversation(this.context.messages, 25000)) {
+    if (this.compactionStrategy.shouldCompact(this.context.messages, this.compactionConfig)) {
       await this.compactConversation();
     }
   }
 
   private async compactConversation(): Promise<void> {
-    // Don't compact if we've already compacted recently (less than 10 messages ago, like Claude Code)
-    if (this.context.allMessages.length - this.context.lastCompactionIndex < 10) {
+    // Don't compact if we've already compacted recently (less than min messages ago)
+    if (this.context.allMessages.length - this.context.lastCompactionIndex < this.compactionConfig.minMessagesBeforeCompaction) {
       return;
     }
 
@@ -232,24 +240,23 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
     }
 
     try {
-      // Get messages to compact (exclude system message and keep recent messages)
+      // Get messages to compact (exclude system message)
       const messagesToCompact = this.context.messages.filter(m => 
         m.role !== 'system' || !m.content.startsWith('You are Jasper')
       );
 
-      if (messagesToCompact.length < 3) {
-        // Notify UI that compaction ended
+      if (messagesToCompact.length < this.compactionConfig.minMessagesBeforeCompaction) {
         if (this.onContextUpdate) {
           this.onContextUpdate({ ...this.context, isCompacting: false });
         }
-        return; // Not enough messages to compact
+        return;
       }
 
-      // Generate advanced compaction result with AI-powered summary (max 5 iterations)
-      const compactionResult = await createAdvancedCompactionResult(
+      // Use intelligent compaction strategy
+      const compactionResult = await this.compactionStrategy.compactMessages(
         messagesToCompact, 
         this.llmProvider,
-        5 // Maximum AI iterations for compaction
+        this.compactionConfig
       );
 
       // Create compaction message for UI display
@@ -274,12 +281,16 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
       
       const recentMessages = this.context.messages.slice(-3); // Keep last 3 messages
       
-      // Create AI context with compacted summary
+      // Create AI context with compacted summary and tool summaries
+      const toolSummariesText = compactionResult.toolSummaries.length > 0 
+        ? `\n\nTool actions taken:\n${compactionResult.toolSummaries.map(tool => `- ${tool.summary}`).join('\n')}`
+        : '';
+      
       this.context.messages = [
         ...(systemPrompt ? [systemPrompt] : []),
         {
           role: 'system' as const,
-          content: `======================================== Previous Conversation Compacted ========================================\n${compactionResult.summary}\n\nTool actions taken:\n${compactionResult.toolSummaries.map(tool => `- ${tool.summary}`).join('\n')}`,
+          content: `======================================== Previous Conversation Compacted ========================================\n${compactionResult.summary}${toolSummariesText}`,
           timestamp: new Date()
         },
         ...recentMessages
@@ -546,5 +557,13 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
 
   setMaxIterations(max: number): void {
     this.context.maxIterations = max;
+  }
+
+  setCompactionConfig(config: Partial<CompactionConfig>): void {
+    this.compactionConfig = { ...this.compactionConfig, ...config };
+  }
+
+  getCompactionConfig(): CompactionConfig {
+    return { ...this.compactionConfig };
   }
 }

@@ -1,10 +1,10 @@
 # Jasper Project
 
-A Claude Code-like terminal AI assistant with tool calling capabilities.
+An intelligent terminal AI assistant with advanced tool calling capabilities.
 
 ## Project Structure
 
-- `.claude/`: Contains configurations or scripts related to Claude AI integration.
+- `.claude/`: Contains IDE configurations and project-specific settings.
 - `.env`, `.env.example`: Environment variable configuration files. `.env.example` serves as a template.
 - `.git/`: Standard Git repository directory.
 - `.gitignore`: Specifies files and directories that Git should ignore (e.g., `node_modules`, logs).

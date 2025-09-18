@@ -7,8 +7,8 @@ export interface AutoScrollConfig {
   disableOnManualScroll?: boolean;
   scrollSensitivity?: number; // pixels from bottom to consider "at bottom"
   debugLogging?: boolean;
-  constrainHeight?: boolean; // gemini-cli pattern
-  availableHeight?: number; // gemini-cli pattern
+  constrainHeight?: boolean; // terminal-ui pattern
+  availableHeight?: number; // terminal-ui pattern
 }
 
 export interface AutoScrollState {
@@ -17,8 +17,8 @@ export interface AutoScrollState {
   isAtBottom: boolean;
   messageCount: number;
   lastScrollTime: number;
-  viewportHeight?: number; // gemini-cli pattern
-  scrollOffset: number; // gemini-cli pattern
+  viewportHeight?: number; // terminal-ui pattern
+  scrollOffset: number; // terminal-ui pattern
 }
 
 export interface AutoScrollControls {
@@ -27,9 +27,9 @@ export interface AutoScrollControls {
   disableAutoScroll: () => void;
   toggleAutoScroll: () => void;
   resetScrollState: () => void;
-  setScrollOffset: (offset: number) => void; // gemini-cli pattern
-  scrollUp: (amount?: number) => void; // gemini-cli pattern
-  scrollDown: (amount?: number) => void; // gemini-cli pattern
+  setScrollOffset: (offset: number) => void; // terminal-ui pattern
+  scrollUp: (amount?: number) => void; // terminal-ui pattern
+  scrollDown: (amount?: number) => void; // terminal-ui pattern
 }
 
 export function useAutoScroll(
@@ -131,7 +131,7 @@ export function useAutoScroll(
     }));
   }, [defaultConfig.debugLogging, defaultConfig.enabled]);
 
-  // Enhanced scroll controls (gemini-cli pattern)
+  // Enhanced scroll controls (terminal-ui pattern)
   const setScrollOffset = useCallback((offset: number) => {
     if (defaultConfig.debugLogging) {
       logger.debug(`AutoScroll: Setting scroll offset to ${offset}`);

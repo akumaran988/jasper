@@ -9,7 +9,7 @@ import fs from 'fs';
 
 import Terminal from './ui/terminal.js';
 import { ConversationAgent } from './core/agent.js';
-import { GeminiProvider, CustomProvider } from './core/llm.js';
+import { GoogleAIProvider, CustomProvider } from './core/llm.js';
 import { registerCoreTools } from './tools/index.js';
 import { JasperConfig, ConversationContext, PermissionContext, PermissionResponse, PermissionRule, Message } from './types/index.js';
 import { initializeLogger, closeLogger, getLogger } from './utils/logger.js';
@@ -21,7 +21,7 @@ dotenv.config();
 
 // Default configuration
 const DEFAULT_CONFIG: JasperConfig = {
-  llmProvider: 'gemini',
+  llmProvider: 'google-ai',
   maxIterations: 10,
   model: 'gemini-2.5-flash-lite',
   tokenLimit: 10000
@@ -45,16 +45,16 @@ function loadConfig(): JasperConfig {
 
 function createLLMProvider(config: JasperConfig) {
   const apiKey = config.apiKey || 
-    process.env.GEMINI_API_KEY || 
+    process.env.GOOGLE_AI_API_KEY || 
     process.env.API_KEY;
 
   if (!apiKey && config.llmProvider !== 'custom') {
-    throw new Error(`API key required for ${config.llmProvider}. Set GEMINI_API_KEY or API_KEY environment variable.`);
+    throw new Error(`API key required for ${config.llmProvider}. Set GOOGLE_AI_API_KEY or API_KEY environment variable.`);
   }
 
   switch (config.llmProvider) {
-    case 'gemini':
-      return new GeminiProvider(apiKey!, config.model);
+    case 'google-ai':
+      return new GoogleAIProvider(apiKey!, config.model);
     case 'custom':
       if (!config.customEndpoint) {
         throw new Error('Custom endpoint required for custom provider');
@@ -303,9 +303,9 @@ const program = new Command();
 
 program
   .name('jasper')
-  .description('Jasper - A Claude Code-like AI development assistant')
+  .description('Jasper - An intelligent AI development assistant')
   .version('1.0.0')
-  .option('-p, --provider <provider>', 'LLM provider (gemini, custom)', 'gemini')
+  .option('-p, --provider <provider>', 'LLM provider (google-ai, custom)', 'google-ai')
   .option('-m, --model <model>', 'Model to use')
   .option('-k, --api-key <key>', 'API key for the LLM provider')
   .option('-e, --endpoint <url>', 'Custom endpoint URL (for custom provider)')

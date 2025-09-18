@@ -183,7 +183,7 @@ function generateToolSummary(toolResult: any): string | null {
   
   const result = toolResult.result;
   
-  // Handle different types of tool results with Claude Code style breadcrumbs
+  // Handle different types of tool results with intelligent breadcrumbs
   if (typeof result === 'string') {
     // File read operations
     const lines = result.split('\n').length;
@@ -279,16 +279,16 @@ async function generateConversationalSummary(
   const compactionPrompt: Message[] = [
     {
       role: 'system',
-      content: `You are a conversation summarizer similar to Claude Code. Create a concise, conversational summary of what happened in this conversation.
+      content: `You are an intelligent conversation summarizer. Create a concise, conversational summary of what happened in this conversation.
 
-The summary should be like Claude Code summaries:
+The summary should be professional and concise:
 - 1-2 sentences maximum, very concise
 - Focus on the main user request and what was accomplished  
 - Written in past tense, natural conversational style
 - Mention key file operations, analyses, or code changes made
 - Include specific details like file names, directories, or key findings when relevant
 
-Example Claude Code style summaries:
+Example professional summaries:
 - "User requested analysis of React components. I examined the component structure, identified performance issues in the rendering logic, and suggested optimizations."
 - "User asked for help with TypeScript compilation errors. I reviewed the code, fixed type definitions in 3 files, and resolved import path issues."
 - "User wanted to understand the file structure. I listed directory contents, analyzed the project architecture, and explained the module organization."

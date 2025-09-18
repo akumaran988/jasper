@@ -68,7 +68,7 @@ export interface ConversationContext {
 }
 
 export interface JasperConfig {
-  llmProvider: 'gemini' | 'custom';
+  llmProvider: 'google-ai' | 'custom';
   apiKey?: string;
   customEndpoint?: string;
   maxIterations: number;

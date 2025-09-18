@@ -60,7 +60,7 @@ export const MainContent = ({
       )}
 
 
-      {/* Completed Messages - Use Static component like gemini-cli */}
+      {/* Completed Messages - Use Static component for performance */}
       {/* Only remount when historyRemountKey changes due to terminal resize */}
       <Static
         key={`static-${historyRemountKey}`}
@@ -84,7 +84,7 @@ export const MainContent = ({
         {(item) => <Box key={item.key} marginBottom={1}>{item.component}</Box>}
       </Static>
 
-      {/* Pending Messages - Dynamic container like gemini-cli */}
+      {/* Pending Messages - Dynamic container for real-time updates */}
       <OverflowProvider>
         <Box flexDirection="column">
           {pendingMessages.map((message, index) => {

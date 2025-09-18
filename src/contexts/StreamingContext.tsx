@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { getLogger } from '../utils/logger.js';
 
-// Streaming states (gemini-cli inspired)
 export enum StreamingState {
   Idle = 'idle',
   Responding = 'responding',

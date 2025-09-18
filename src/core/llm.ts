@@ -2,8 +2,8 @@ import { GoogleGenAI } from '@google/genai';
 import { LLMProvider, Message, Tool, AIResponse } from '../types/index.js';
 import { getLogger } from '../utils/logger.js';
 
-export class GeminiProvider implements LLMProvider {
-  name = 'gemini';
+export class GoogleAIProvider implements LLMProvider {
+  name = 'google-ai';
   private client: GoogleGenAI;
   private modelName: string;
 
@@ -56,7 +56,7 @@ export class GeminiProvider implements LLMProvider {
             textPreview: text.substring(0, 100)
           });
           
-          // Try to clean up malformed JSON (common issue with Gemini)
+          // Try to clean up malformed JSON (common issue with AI responses)
           try {
             // Fix common JSON issues: actual newlines in JSON strings
             let cleanedText = text
@@ -110,7 +110,7 @@ export class GeminiProvider implements LLMProvider {
         
       } catch (error) {
         if (attempt === maxRetries) {
-          console.error('Gemini API error:', error);
+          logger.error('Google AI API error:', error);
           throw error;
         }
         logger.debug(`API error on attempt ${attempt}, retrying...`, { error });

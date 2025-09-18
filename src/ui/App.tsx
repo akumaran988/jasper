@@ -55,7 +55,6 @@ export const App: React.FC<AppProps> = ({
 
   return (
     <Box flexDirection="column" width="90%">
-      {/* Main Content Area - Following gemini-cli's exact pattern */}
       <MainContent
         context={context}
         terminalWidth={terminalWidth}
@@ -67,7 +66,7 @@ export const App: React.FC<AppProps> = ({
         historyRemountKey={historyRemountKey}
       />
 
-      {/* Controls Area - Following gemini-cli's pattern */}
+      {/* Controls Area */}
       <Box flexDirection="column">
         {/* Permission Selector */}
         {pendingPermission && (

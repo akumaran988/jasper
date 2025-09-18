@@ -47,7 +47,6 @@ interface MessageRendererProps {
   onToggleExpansion?: (key: string) => void;
   onFocusToolResult?: (key: string) => void;
   toolResultPage?: number;
-  // Gemini-CLI props
   terminalWidth?: number;
   availableTerminalHeight?: number;
   isPending?: boolean;
@@ -175,7 +174,6 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
       content = '⚠️  AI response parsing error. Please retry.';
     }
 
-    // Main content with Claude Code-style bullet (white bullet for AI responses, red for errors)
     if (content && content.trim()) {
       const isError = content.includes('⚠️  AI response parsing error') || content.includes('⚠️  Could not parse AI response');
       
