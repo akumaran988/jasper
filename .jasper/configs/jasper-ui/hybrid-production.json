@@ -1,0 +1,221 @@
+{
+  "llmProvider": "google-ai",
+  "model": "gemini-2.5-flash-lite",
+  "maxIterations": 20,
+  "tokenLimit": 20000,
+  "apiThrottleMs": 1500,
+  "mcpServers": {
+    "local-development": {
+      "mode": "local",
+      "autoStart": true,
+      "httpUrl": "http://localhost:8081/mcp/tools",
+      "description": "Local development tools",
+      "trust": true,
+      "timeout": 30000,
+      "serverConfig": {
+        "port": 8081,
+        "env": {
+          "NODE_ENV": "development",
+          "LOG_LEVEL": "debug"
+        }
+      }
+    },
+    "staging-cluster": {
+      "mode": "remote",
+      "httpUrl": "https://staging-mcp.company.com:8443/mcp/tools",
+      "description": "Staging Kubernetes cluster",
+      "trust": false,
+      "timeout": 45000,
+      "healthCheck": true,
+      "retryAttempts": 3,
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${STAGING_MCP_TOKEN}",
+        "X-Cluster-Name": "staging-us-east-1"
+      }
+    },
+    "production-cluster": {
+      "mode": "remote", 
+      "httpUrl": "https://prod-mcp.company.com:8443/mcp/tools",
+      "description": "Production Kubernetes cluster",
+      "trust": false,
+      "timeout": 60000,
+      "healthCheck": true,
+      "retryAttempts": 5,
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${PRODUCTION_MCP_TOKEN}",
+        "X-Cluster-Name": "prod-us-west-2"
+      }
+    },
+    "aws-services": {
+      "mode": "remote",
+      "httpUrl": "https://aws-mcp.company.com:8443/mcp/tools", 
+      "description": "AWS infrastructure management",
+      "trust": false,
+      "timeout": 90000,
+      "healthCheck": true,
+      "retryAttempts": 3,
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${AWS_MCP_TOKEN}",
+        "X-Provider": "aws",
+        "X-Region": "us-west-2"
+      }
+    }
+  },
+  "serviceDefinitions": {
+    "local-test-api": {
+      "mcpServer": "local-development",
+      "config": {
+        "name": "test-api",
+        "type": "process",
+        "command": "npm",
+        "args": ["run", "dev"],
+        "workingDir": "./test-service",
+        "env": {
+          "NODE_ENV": "development",
+          "PORT": "3000",
+          "API_URL": "https://staging-api.company.com"
+        },
+        "healthCheck": {
+          "url": "http://localhost:3000/health",
+          "interval": 30
+        },
+        "autoRestart": true
+      },
+      "deployment": {
+        "environment": "local"
+      }
+    },
+    "staging-api-deployment": {
+      "mcpServer": "staging-cluster",
+      "config": {
+        "name": "api-service",
+        "type": "docker",
+        "image": "company/api:staging",
+        "env": {
+          "NODE_ENV": "staging",
+          "DATABASE_URL": "${STAGING_DATABASE_URL}",
+          "REDIS_URL": "${STAGING_REDIS_URL}",
+          "LOG_LEVEL": "info"
+        },
+        "healthCheck": {
+          "url": "/api/health",
+          "interval": 60
+        },
+        "autoRestart": true,
+        "maxRestarts": 5
+      },
+      "deployment": {
+        "environment": "remote",
+        "region": "us-east-1",
+        "namespace": "staging"
+      }
+    },
+    "production-api": {
+      "mcpServer": "production-cluster",
+      "config": {
+        "name": "api-service",
+        "type": "docker",
+        "image": "company/api:v1.2.3",
+        "env": {
+          "NODE_ENV": "production",
+          "DATABASE_URL": "${PROD_DATABASE_URL}",
+          "REDIS_URL": "${PROD_REDIS_URL}",
+          "LOG_LEVEL": "warn"
+        },
+        "healthCheck": {
+          "url": "/api/health",
+          "interval": 120
+        },
+        "autoRestart": true,
+        "maxRestarts": 10,
+        "restartDelay": 60
+      },
+      "deployment": {
+        "environment": "remote",
+        "region": "us-west-2",
+        "namespace": "production"
+      }
+    },
+    "production-worker": {
+      "mcpServer": "production-cluster",
+      "config": {
+        "name": "background-worker",
+        "type": "docker",
+        "image": "company/worker:v1.2.3",
+        "env": {
+          "NODE_ENV": "production",
+          "WORKER_CONCURRENCY": "5",
+          "DATABASE_URL": "${PROD_DATABASE_URL}",
+          "REDIS_URL": "${PROD_REDIS_URL}"
+        },
+        "healthCheck": {
+          "command": "/app/scripts/health-check.sh",
+          "interval": 180
+        },
+        "autoRestart": true,
+        "maxRestarts": 15
+      },
+      "deployment": {
+        "environment": "remote",
+        "region": "us-west-2",
+        "namespace": "production"
+      }
+    },
+    "aws-rds-instance": {
+      "mcpServer": "aws-services",
+      "config": {
+        "name": "production-database",
+        "type": "managed-service",
+        "provider": "aws-rds",
+        "instanceClass": "db.r6g.large",
+        "engine": "postgres",
+        "version": "15.4",
+        "multiAZ": true,
+        "backupRetention": 7,
+        "env": {
+          "DB_NAME": "proddb",
+          "MASTER_USERNAME": "dbadmin"
+        }
+      },
+      "deployment": {
+        "environment": "remote",
+        "region": "us-west-2"
+      }
+    }
+  },
+  "deploymentProfiles": {
+    "local-dev": {
+      "description": "Local development with remote APIs",
+      "services": ["local-test-api"],
+      "parallel": false,
+      "autoStart": true
+    },
+    "staging-deploy": {
+      "description": "Deploy to staging environment",
+      "services": ["staging-api-deployment"],
+      "parallel": false,
+      "autoStart": false
+    },
+    "production-deploy": {
+      "description": "Production deployment",
+      "services": ["production-api", "production-worker"],
+      "parallel": false,
+      "autoStart": false
+    },
+    "aws-infrastructure": {
+      "description": "AWS infrastructure setup",
+      "services": ["aws-rds-instance"],
+      "parallel": false,
+      "autoStart": false
+    },
+    "full-production": {
+      "description": "Complete production stack",
+      "services": ["aws-rds-instance", "production-api", "production-worker"],
+      "parallel": false,
+      "autoStart": false
+    }
+  }
+}

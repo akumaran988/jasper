@@ -80,12 +80,20 @@ CRITICAL: If you include ANY tool_calls in your response, should_continue MUST b
 
 DO NOT mention should_continue in your "content" field - users should never see this technical detail.
 
+
 Available Tools:
 ${this.context.tools.map(tool => {
   const schema = JSON.stringify(tool.parameters, null, 2);
-  return `- ${tool.name}: ${tool.description}
+  let toolDesc = `- ${tool.name}: ${tool.description}
   Parameters Schema:
   ${schema}`;
+  
+  // Add tool-specific AI prompt if available
+  if (tool.prompt) {
+    toolDesc += `\n  AI GUIDANCE: ${tool.prompt}`;
+  }
+  
+  return toolDesc;
 }).join('\n\n')}
 
 Response Format (STRICTLY REQUIRED):
@@ -199,6 +207,11 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
     this.context.messages.push(message);
     this.context.allMessages.push(message);
     this.updateTokenCount();
+    
+    // Immediately notify UI of the user message addition
+    if (this.onContextUpdate) {
+      this.onContextUpdate({ ...this.context });
+    }
   }
 
   private addAssistantMessage(response: AIResponse): void {
@@ -578,5 +591,26 @@ CRITICAL: When user asks you to DO something (ping, list files, run commands, et
 
   getCompactionConfig(): CompactionConfig {
     return { ...this.compactionConfig };
+  }
+
+  refreshTools(): void {
+    // Update tools from the global registry
+    this.context.tools = globalToolRegistry.getAll();
+
+    // Rebuild system prompt with updated tool list
+    this.systemPrompt = this.buildSystemPrompt();
+
+    // Update the system message with new tools (replace the first system message)
+    if (this.context.messages.length > 0 && this.context.messages[0].role === 'system') {
+      this.context.messages[0].content = this.systemPrompt;
+      this.context.allMessages[0].content = this.systemPrompt;
+    }
+
+    this.updateTokenCount();
+
+    // Notify context update callback if present
+    if (this.onContextUpdate) {
+      this.onContextUpdate(this.context);
+    }
   }
 }

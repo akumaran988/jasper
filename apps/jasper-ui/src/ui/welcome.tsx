@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
-const WelcomeMessage: React.FC = () => {
+const WelcomeMessage: React.FC = React.memo(() => {
   return (
     <Box flexDirection="column" marginBottom={2}>
       {/* Header */}
@@ -60,6 +60,8 @@ const WelcomeMessage: React.FC = () => {
       </Box>
     </Box>
   );
-};
+});
+
+WelcomeMessage.displayName = 'WelcomeMessage';
 
 export default WelcomeMessage;

@@ -1,0 +1,41 @@
+{
+  "llmProvider": "google-ai",
+  "model": "gemini-2.5-flash-lite",
+  "maxIterations": 15,
+  "tokenLimit": 15000,
+  "apiThrottleMs": 2000,
+  "mcpServers": {
+    "service-management-local": {
+      "httpUrl": "http://localhost:8081/mcp/tools",
+      "description": "Local service management - start/stop services and containers",
+      "trust": true,
+      "timeout": 30000,
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    "github": {
+      "command": "node",
+      "args": ["../mcp-server/dist/index.js", "github"],
+      "description": "GitHub integration for repository access and management - using generic MCP server launcher",
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your-github-token-here",
+        "MCP_SERVER_TYPE": "github"
+      },
+      "trust": false,
+      "timeout": 30000
+    },
+    "filesystem": {
+      "command": "node",
+      "args": ["../mcp-server/dist/index.js", "filesystem"],
+      "description": "Filesystem access for current directory - using generic MCP server launcher",
+      "env": {
+        "ALLOWED_DIR": ".",
+        "MCP_SERVER_TYPE": "filesystem"
+      },
+      "trust": true,
+      "timeout": 15000,
+      "includeTools": ["list_directory", "read_file", "get_file_info"]
+    }
+  }
+}

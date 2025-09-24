@@ -1,0 +1,39 @@
+{
+  "llmProvider": "google-ai",
+  "model": "gemini-2.5-flash-lite",
+  "maxIterations": 10,
+  "tokenLimit": 15000,
+  "apiThrottleMs": 3000,
+  "mcpServers": {
+    "service-management-local": {
+      "httpUrl": "http://localhost:8081/mcp/tools",
+      "description": "Local service management for starting, stopping, and monitoring services and Docker containers",
+      "trust": true,
+      "timeout": 30000,
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    "service-management-remote": {
+      "httpUrl": "http://your-remote-server:8080/mcp/tools",
+      "description": "Remote service management server",
+      "trust": false,
+      "timeout": 30000,
+      "headers": {
+        "Content-Type": "application/json",
+        "X-API-Key": "your-api-key-here"
+      }
+    },
+    "github": {
+      "command": "node",
+      "args": ["../mcp-server/dist/index.js", "github"],
+      "description": "GitHub integration for repository access - using generic MCP server launcher",
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your-github-token",
+        "MCP_SERVER_TYPE": "github"
+      },
+      "trust": false,
+      "timeout": 30000
+    }
+  }
+}

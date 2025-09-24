@@ -1,0 +1,104 @@
+{
+  "services": [
+    {
+      "name": "redis-cache",
+      "type": "docker",
+      "image": "redis:7-alpine",
+      "containerName": "app-redis",
+      "ports": {
+        "6379": "6379"
+      },
+      "volumes": {
+        "./data/redis": "/data"
+      },
+      "env": {
+        "REDIS_PASSWORD": "secure-redis-password"
+      },
+      "dockerArgs": ["--memory=512m"],
+      "healthCheck": {
+        "command": "redis-cli ping",
+        "interval": 10,
+        "timeout": 2,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 1,
+      "maxRestarts": 5
+    },
+    {
+      "name": "postgres-db",
+      "type": "docker",
+      "image": "postgres:15-alpine",
+      "containerName": "app-postgres",
+      "ports": {
+        "5432": "5432"
+      },
+      "volumes": {
+        "./data/postgres": "/var/lib/postgresql/data",
+        "./init.sql": "/docker-entrypoint-initdb.d/init.sql"
+      },
+      "env": {
+        "POSTGRES_DB": "appdb",
+        "POSTGRES_USER": "appuser",
+        "POSTGRES_PASSWORD": "secure-db-password"
+      },
+      "dockerArgs": ["--memory=1g"],
+      "healthCheck": {
+        "command": "pg_isready -U appuser -d appdb",
+        "interval": 15,
+        "timeout": 5,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 5,
+      "maxRestarts": 3
+    },
+    {
+      "name": "api-gateway",
+      "type": "process",
+      "command": "node",
+      "args": ["gateway.js"],
+      "workingDir": "/path/to/api-gateway",
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "3000",
+        "REDIS_URL": "redis://localhost:6379",
+        "DATABASE_URL": "postgresql://appuser:secure-db-password@localhost:5432/appdb",
+        "JWT_SECRET": "your-jwt-secret"
+      },
+      "healthCheck": {
+        "url": "http://localhost:3000/health",
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 10,
+      "maxRestarts": 5
+    },
+    {
+      "name": "user-service",
+      "type": "docker",
+      "image": "user-service:latest",
+      "containerName": "user-service",
+      "ports": {
+        "3001": "3000"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "DATABASE_URL": "postgresql://appuser:secure-db-password@host.docker.internal:5432/appdb",
+        "REDIS_URL": "redis://host.docker.internal:6379"
+      },
+      "dockerArgs": ["--memory=512m", "--cpus=1"],
+      "healthCheck": {
+        "url": "http://localhost:3001/health",
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 5,
+      "maxRestarts": 3
+    }
+  ]
+}

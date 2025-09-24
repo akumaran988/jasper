@@ -1,0 +1,38 @@
+{
+  "llmProvider": "google-ai",
+  "model": "gemini-2.5-flash-lite",
+  "maxIterations": 12,
+  "tokenLimit": 12000,
+  "apiThrottleMs": 3000,
+  "mcpServers": {
+    "service-management-remote": {
+      "httpUrl": "http://your-remote-server:8080/mcp/tools",
+      "description": "Remote service management server with authentication",
+      "trust": false,
+      "timeout": 45000,
+      "headers": {
+        "Content-Type": "application/json",
+        "X-API-Key": "your-secure-api-key-here"
+      }
+    },
+    "service-management-local": {
+      "httpUrl": "http://localhost:8081/mcp/tools",
+      "description": "Local service management backup",
+      "trust": true,
+      "timeout": 30000,
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    "github": {
+      "command": "node",
+      "args": ["../../mcp-servers/github-integration/dist/index.js"],
+      "description": "GitHub integration",
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your-github-token"
+      },
+      "trust": false,
+      "timeout": 30000
+    }
+  }
+}

@@ -1,6 +1,0 @@
-{
-  "llmProvider": "google-ai",
-  "model": "gemini-1.5-flash",
-  "maxIterations": 10,
-  "apiKey": "your-google-ai-api-key-here"
-}

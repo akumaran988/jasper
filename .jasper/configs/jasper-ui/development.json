@@ -1,0 +1,30 @@
+{
+  "llmProvider": "google-ai",
+  "model": "gemini-2.5-flash-lite",
+  "maxIterations": 20,
+  "tokenLimit": 20000,
+  "apiThrottleMs": 1000,
+  "mcpServers": {
+    "service-management": {
+      "httpUrl": "http://localhost:8081/mcp/tools",
+      "description": "Local service management for development workflow",
+      "trust": true,
+      "timeout": 60000,
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    "github-dev": {
+      "command": "tsx",
+      "args": ["../mcp-server/src/index.ts"],
+      "description": "GitHub integration in development mode - using generic MCP server launcher",
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your-dev-token",
+        "DEBUG": "true",
+        "MCP_SERVER_TYPE": "github"
+      },
+      "trust": true,
+      "timeout": 45000
+    }
+  }
+}

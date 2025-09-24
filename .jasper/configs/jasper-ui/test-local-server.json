@@ -1,0 +1,26 @@
+{
+  "llmProvider": "google-ai",
+  "model": "gemini-2.5-flash-lite",
+  "maxIterations": 10,
+  "tokenLimit": 10000,
+  "apiThrottleMs": 2000,
+  "mcpServers": {
+    "local-databases": {
+      "mode": "local", 
+      "autoStart": true,
+      "httpUrl": "http://localhost:8082/mcp/tools",
+      "description": "Local database management via service-manager",
+      "trust": true,
+      "timeout": 30000,
+      "serverConfig": {
+        "script": "../mcp-server/src/index.ts",
+        "port": 8082,
+        "args": ["start", "--server=service-manager", "--port=8082"],
+        "env": {
+          "NODE_ENV": "development",
+          "SERVICE_TYPE": "database"
+        }
+      }
+    }
+  }
+}

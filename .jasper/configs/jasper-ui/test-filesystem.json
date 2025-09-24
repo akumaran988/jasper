@@ -1,0 +1,21 @@
+{
+  "llmProvider": "google-ai",
+  "model": "gemini-2.5-flash-lite",
+  "maxIterations": 10,
+  "tokenLimit": 10000,
+  "apiThrottleMs": 3000,
+  "mcpServers": {
+    "filesystem": {
+      "command": "node", 
+      "args": ["../mcp-server/dist/index.js", "filesystem"],
+      "description": "Local filesystem access for current directory - using generic MCP server launcher",
+      "env": {
+        "MCP_SERVER_TYPE": "filesystem",
+        "ALLOWED_DIR": "."
+      },
+      "trust": true,
+      "timeout": 15000,
+      "includeTools": ["list_directory", "read_file", "get_file_info"]
+    }
+  }
+}

@@ -30,7 +30,7 @@ interface AppProps {
   pasteBlocks: Array<{start: number, end: number, content: string}>;
 }
 
-export const App: React.FC<AppProps> = ({
+export const AppLayout: React.FC<AppProps> = ({
   context,
   onMessage,
   isProcessing,

@@ -9,25 +9,53 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc",
+    "dev:no-bundle": "tsx src/index.ts",
+    "build": "tsc && npm run bundle-servers",
     "debug": "tsc && node dist/index.js --log-file=logs/jasper.log --debug",
     "start": "tsc && node dist/index.js --log-file=logs/jasper.log",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/unit/*.test.ts tests/integration/*.test.ts",
     "test:unit": "tsx --test tests/unit/*.test.ts",
-    "test:integration": "tsx --test tests/integration/*.test.ts"
+    "test:integration": "tsx --test tests/integration/*.test.ts",
+    "package": "npm run build && npm pack",
+    "start:basic": "npm run copy-config:basic && npm run dev",
+    "start:builtin": "npm run copy-config:builtin && npm run dev:no-bundle",
+    "start:builtin:full": "npm run copy-config:builtin && npm run dev:no-bundle",
+    "start:local-stack": "npm run copy-config:local-stack && npm run dev:no-bundle",
+    "start:mixed": "npm run copy-config:mixed && npm run dev:no-bundle",
+    "start:production": "npm run copy-config:production && npm run dev:no-bundle",
+    "start:published": "npm run copy-config:published && npm run dev:no-bundle",
+    "copy-config:basic": "cp ../../.jasper/configs/jasper-ui/basic.json .jasper/settings.json",
+    "copy-config:builtin": "cp ../../.jasper/configs/jasper-ui/development-builtin.json .jasper/settings.json",
+    "copy-config:local-stack": "cp ../../.jasper/configs/jasper-ui/local-dev-stack.json .jasper/settings.json",
+    "copy-config:mixed": "cp ../../.jasper/configs/jasper-ui/mixed-deployment.json .jasper/settings.json",
+    "copy-config:production": "cp ../../.jasper/configs/jasper-ui/hybrid-production.json .jasper/settings.json",
+    "copy-config:published": "cp ../../.jasper/configs/jasper-ui/published-cli.json .jasper/settings.json",
+    "mcp-server:service-mgmt": "cd ../../packages/service-manager && npm run start:local",
+    "mcp-server:service-mgmt:remote": "cd ../../packages/service-manager && npm run start:remote",
+    "mcp-server:service-mgmt:dev": "cd ../../packages/service-manager && npm run dev:local",
+    "demo:local": "npm run start:builtin",
+    "demo:full-stack": "npm run start:local-stack", 
+    "demo:distributed": "npm run start:mixed",
+    "demo:production": "npm run start:production",
+    "demo:direct": "tsx src/core/example-direct-usage.ts"
   },
   "keywords": [
     "ai",
     "assistant",
     "terminal",
     "cli",
-    "tools"
+    "tools",
+    "mcp",
+    "automation",
+    "development"
   ],
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
     "@google/genai": "^1.17.0",
+    "@jasper/service-manager": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.18.1",
     "ansi-escapes": "^7.1.0",
     "chalk": "^4.1.2",
     "cli-spinners": "^3.2.0",
@@ -48,5 +76,21 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.20.5",
     "typescript": "^5.3.3"
+  },
+  "files": [
+    "dist/**/*",
+    "builtin-servers/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "mcpServers": {
+    "builtin": [
+      "service-management",
+      "file-management",
+      "git-integration"
+    ]
   }
 }

@@ -1,0 +1,99 @@
+{
+  "name": "local-development-environment",
+  "description": "Complete local development setup",
+  "services": [
+    {
+      "name": "dev-database",
+      "type": "docker",
+      "image": "postgres:15-alpine",
+      "containerName": "dev-postgres",
+      "ports": {
+        "5433": "5432"
+      },
+      "volumes": {
+        "./dev-data/postgres": "/var/lib/postgresql/data"
+      },
+      "env": {
+        "POSTGRES_DB": "devdb",
+        "POSTGRES_USER": "dev",
+        "POSTGRES_PASSWORD": "devpass"
+      },
+      "healthCheck": {
+        "command": "pg_isready -U dev -d devdb",
+        "interval": 10,
+        "timeout": 3,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 2,
+      "maxRestarts": 10
+    },
+    {
+      "name": "dev-redis",
+      "type": "docker",
+      "image": "redis:7-alpine",
+      "containerName": "dev-redis",
+      "ports": {
+        "6380": "6379"
+      },
+      "volumes": {
+        "./dev-data/redis": "/data"
+      },
+      "healthCheck": {
+        "command": "redis-cli ping",
+        "interval": 5,
+        "timeout": 2,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 1,
+      "maxRestarts": 10
+    },
+    {
+      "name": "dev-server",
+      "type": "process",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "workingDir": "/path/to/your/project",
+      "env": {
+        "NODE_ENV": "development",
+        "PORT": "3000",
+        "DATABASE_URL": "postgresql://dev:devpass@localhost:5433/devdb",
+        "REDIS_URL": "redis://localhost:6380",
+        "DEBUG": "*",
+        "HOT_RELOAD": "true"
+      },
+      "healthCheck": {
+        "url": "http://localhost:3000/api/health",
+        "interval": 30,
+        "timeout": 5,
+        "retries": 2
+      },
+      "autoRestart": true,
+      "restartDelay": 3,
+      "maxRestarts": 20
+    },
+    {
+      "name": "dev-frontend",
+      "type": "process",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "workingDir": "/path/to/frontend",
+      "env": {
+        "NODE_ENV": "development",
+        "REACT_APP_API_URL": "http://localhost:3000",
+        "FAST_REFRESH": "true",
+        "PORT": "3001"
+      },
+      "healthCheck": {
+        "url": "http://localhost:3001",
+        "interval": 30,
+        "timeout": 5,
+        "retries": 2
+      },
+      "autoRestart": true,
+      "restartDelay": 5,
+      "maxRestarts": 15
+    }
+  ]
+}

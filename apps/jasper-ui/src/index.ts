@@ -5,12 +5,14 @@ import { render, Text } from 'ink';
 import { Command } from 'commander';
 import dotenv from 'dotenv';
 import path from 'path';
-import fs from 'fs';
 
 import Terminal from './ui/terminal.js';
+import { loadConfig as loadJasperConfig, parseConfigFromArgs, displayConfigInfo, createDefaultJasperConfig } from './utils/configLoader.js';
 import { ConversationAgent } from './core/agent.js';
 import { GoogleAIProvider, CustomProvider } from './core/llm.js';
 import { registerCoreTools } from './tools/index.js';
+import { initializeMCPManager, getMCPManager } from './core/mcpManager.js';
+import { mcpCommands } from './commands/mcpCommands.js';
 import { JasperConfig, ConversationContext, PermissionContext, PermissionResponse, PermissionRule, Message } from './types/index.js';
 import { initializeLogger, closeLogger, getLogger } from './utils/logger.js';
 import { shouldCompactConversation, createConversationSummary, countConversationTokens } from './utils/tokenCounter.js';
@@ -19,28 +21,31 @@ import { permissionRegistry } from './permissions/registry.js';
 // Load environment variables
 dotenv.config();
 
-// Default configuration
-const DEFAULT_CONFIG: JasperConfig = {
-  llmProvider: 'google-ai',
-  maxIterations: 10,
-  model: 'gemini-2.5-flash-lite',
-  tokenLimit: 10000
-};
+// Configuration initialization check
+const initConfigFlag = process.argv.includes('--init-config');
+if (initConfigFlag) {
+  try {
+    const configPath = createDefaultJasperConfig();
+    console.log(`✅ Created default configuration: ${configPath}`);
+    console.log('📝 Edit this file to customize your Jasper settings');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Failed to create default configuration:', error);
+    process.exit(1);
+  }
+}
 
 function loadConfig(): JasperConfig {
-  const configPath = path.join(process.cwd(), 'jasper.config.json');
+  // Parse command line arguments for config file
+  const explicitConfigPath = parseConfigFromArgs(process.argv);
   
-  try {
-    if (fs.existsSync(configPath)) {
-      const configFile = fs.readFileSync(configPath, 'utf-8');
-      const userConfig = JSON.parse(configFile);
-      return { ...DEFAULT_CONFIG, ...userConfig };
-    }
-  } catch (error) {
-    console.warn('⚠️  Error loading config file, using defaults');
-  }
+  // Load configuration with priority system
+  const configResult = loadJasperConfig(explicitConfigPath);
   
-  return DEFAULT_CONFIG;
+  // Display configuration information
+  displayConfigInfo(configResult);
+  
+  return configResult.config;
 }
 
 function createLLMProvider(config: JasperConfig) {
@@ -230,34 +235,112 @@ const App: React.FC<AppProps> = ({ config }) => {
   };
 
   useEffect(() => {
-    try {
-      // Register core tools
-      registerCoreTools();
-      
-      // Create LLM provider
-      const llmProvider = createLLMProvider(config);
-      
-      // Create conversation agent with permission callback, throttling, and real-time UI updates
-      const conversationAgent = new ConversationAgent(
-        llmProvider, 
-        config.maxIterations,
-        requestPermission,
-        config.apiThrottleMs || 3000,
-        // Real-time context update callback
-        (updatedContext) => {
-          setContext(updatedContext);
+    async function initializeJasper() {
+      try {
+        // Register core tools
+        registerCoreTools();
+        
+        // Initialize MCP manager if servers are configured
+        let mcpManager = null;
+        if (config.mcpServers && Object.keys(config.mcpServers).length > 0) {
+          // Convert MCPServerConfig to MixedMCPServerConfig
+          const mixedServers: Record<string, any> = {};
+          for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+            mixedServers[name] = {
+              ...serverConfig,
+              // Use explicit mode if provided, otherwise detect based on URL
+              mode: (serverConfig as any).mode || (serverConfig.httpUrl?.includes('localhost') ? 'local' : 'remote'),
+              name
+            };
+          }
+          
+          mcpManager = initializeMCPManager({
+            servers: mixedServers,
+            serviceDefinitions: config.serviceDefinitions,
+            deploymentProfiles: config.deploymentProfiles,
+            debugMode: process.env.DEBUG === 'true'
+          });
+          
+          await mcpManager.initialize();
+          console.log('🔗 MCP servers initialized');
+          
+          // Connection status can be checked via /status command if needed
+          // No console.log here to prevent UI duplication during startup
         }
-      );
-      setAgent(conversationAgent);
-      setContext(conversationAgent.getContext());
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      setError(errorMessage);
+        
+        // Create LLM provider
+        const llmProvider = createLLMProvider(config);
+        
+        // Create conversation agent with permission callback, throttling, and real-time UI updates
+        const conversationAgent = new ConversationAgent(
+          llmProvider,
+          config.maxIterations,
+          requestPermission,
+          config.apiThrottleMs || 3000,
+          // Real-time context update callback
+          (updatedContext) => {
+            setContext(updatedContext);
+          }
+        );
+
+        // If MCP manager was initialized, refresh tools in the agent to include MCP tools
+        if (mcpManager) {
+          conversationAgent.refreshTools();
+          console.log('🔄 Agent tools refreshed with MCP tools');
+        }
+
+        setAgent(conversationAgent);
+        setContext(conversationAgent.getContext());
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(errorMessage);
+      }
     }
+    
+    initializeJasper();
   }, [config]);
+
+  // Auto-clear screen 1 second after startup - like Ctrl+X (delayed to prevent interference with typing)
+  useEffect(() => {
+    if (agent) {
+      const clearTimer = setTimeout(() => {
+        handleClearConversation();
+      }, 1000);
+      
+      return () => clearTimeout(clearTimer);
+    }
+  }, [agent, handleClearConversation]);
+
+  const handleSlashCommand = async (message: string): Promise<boolean> => {
+    if (!message.startsWith('/')) return false;
+    
+    // Parse command and arguments
+    const parts = message.slice(1).split(' ');
+    const command = '/' + parts[0];
+    const args = parts.slice(1);
+
+    // Find matching command
+    const slashCommand = mcpCommands.find(cmd => cmd.name === command);
+    if (slashCommand) {
+      try {
+        await slashCommand.handler(...args);
+        return true;
+      } catch (error) {
+        console.error(`Error executing command ${command}:`, error);
+        return true; // Command was found, even if it failed
+      }
+    }
+
+    return false; // Command not found
+  };
 
   const handleMessage = async (message: string) => {
     if (!agent || isProcessing || isCompacting) return;
+
+    // Check if it's a slash command first
+    if (await handleSlashCommand(message)) {
+      return; // Command was handled, don't process as regular message
+    }
 
     setIsProcessing(true);
     setError(null);
@@ -303,7 +386,7 @@ const program = new Command();
 
 program
   .name('jasper')
-  .description('Jasper - An intelligent AI development assistant')
+  .description('Jasper - An intelligent AI development assistant with MCP integration')
   .version('1.0.0')
   .option('-p, --provider <provider>', 'LLM provider (google-ai, custom)', 'google-ai')
   .option('-m, --model <model>', 'Model to use')
@@ -314,6 +397,7 @@ program
   .option('-c, --config <path>', 'Path to config file')
   .option('-l, --log-file [path]', 'Enable logging to file (optional path)', false)
   .option('-d, --debug', 'Enable debug logging')
+  .option('--init-config', 'Create default .jasper/settings.json configuration')
   .action((options) => {
     let config = loadConfig();
 

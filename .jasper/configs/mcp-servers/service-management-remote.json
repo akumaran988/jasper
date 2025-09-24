@@ -1,0 +1,13 @@
+{
+  "mode": "remote",
+  "port": 8080,
+  "auth": "required",
+  "apiKey": "your-secure-api-key-change-this",
+  "maxServices": 100,
+  "logRetention": 30,
+  "allowedHosts": [
+    "https://yourdomain.com",
+    "https://api.yourdomain.com",
+    "http://localhost:3000"
+  ]
+}

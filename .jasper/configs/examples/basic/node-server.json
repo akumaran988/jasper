@@ -1,0 +1,21 @@
+{
+  "name": "node-api-server",
+  "type": "process",
+  "command": "node",
+  "args": ["server.js"],
+  "workingDir": "/path/to/your/project",
+  "env": {
+    "NODE_ENV": "development",
+    "PORT": "3000",
+    "DEBUG": "app:*"
+  },
+  "healthCheck": {
+    "url": "http://localhost:3000/health",
+    "interval": 30,
+    "timeout": 5,
+    "retries": 3
+  },
+  "autoRestart": true,
+  "restartDelay": 5,
+  "maxRestarts": 10
+}

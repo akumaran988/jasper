@@ -1,0 +1,56 @@
+{
+  "name": "@jasper/service-manager",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Unified service manager - can be used as library or MCP server",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "jasper-service-manager": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./cli": {
+      "import": "./dist/cli.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "start:local": "npm run build && node dist/cli.js --mode=local --port=8081",
+    "start:remote": "npm run build && node dist/cli.js --mode=remote --port=8080 --auth=required",
+    "dev:local": "tsx src/cli.ts --mode=local --port=8081",
+    "dev:remote": "tsx src/cli.ts --mode=remote --port=8080 --auth=required",
+    "test": "echo 'Tests not implemented yet'"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.2",
+    "@types/dockerode": "^3.3.44",
+    "cors": "^2.8.5",
+    "dockerode": "^4.0.2",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "ps-tree": "^1.2.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.5",
+    "@types/ps-tree": "^1.1.5",
+    "@types/uuid": "^9.0.7",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "keywords": [
+    "service-manager",
+    "process-management",
+    "docker",
+    "mcp",
+    "microservices"
+  ]
+}

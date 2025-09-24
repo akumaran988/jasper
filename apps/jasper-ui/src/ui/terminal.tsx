@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useInput, useApp, useStdout } from 'ink';
-import ansiEscapes from 'ansi-escapes';
+import { useInput, useApp } from 'ink';
 import { ConversationContext, PermissionContext, PermissionResponse, PermissionRule, SlashCommand } from '../types/index.js';
 import { permissionRegistry } from '../permissions/registry.js';
-import { App } from './App.js';
+import { AppLayout } from './App.js';
 
 import { useAutoScroll } from '../hooks/useAutoScroll.js';
 import { getLogger } from '../utils/logger.js';
@@ -87,32 +86,29 @@ const TerminalContent: React.FC<TerminalProps> = ({
   const [constrainHeight, setConstrainHeight] = useState(true);
   const [historyRemountKey, setHistoryRemountKey] = useState(0);
   
-  // Refresh static content function
-  const { stdout } = useStdout();
-  const refreshStatic = useCallback(() => {
-    stdout.write(ansiEscapes.clearTerminal); // Clear terminal
-    setHistoryRemountKey((prev) => prev + 1);
-    logger.debug('Terminal refreshed due to resize', {
-      columns: terminalSize.columns,
-      rows: terminalSize.rows
-    });
-  }, [logger, terminalSize, stdout]);
+  // Removed refreshStatic function - was causing welcome message to disappear on resize
   
-  // Terminal refresh on resize
+  // Terminal refresh on resize - DISABLED to prevent welcome message disappearing
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
       return;
     }
 
-    const handler = setTimeout(() => {
-      refreshStatic();
-    }, 300);
+    // Don't call refreshStatic on resize to prevent welcome message disappearing
+    // const handler = setTimeout(() => {
+    //   refreshStatic();
+    // }, 300);
 
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [terminalSize.columns, refreshStatic]);
+    // return () => {
+    //   clearTimeout(handler);
+    // };
+    
+    logger.debug('Terminal resized, but not refreshing to preserve UI state', {
+      columns: terminalSize.columns,
+      rows: terminalSize.rows
+    });
+  }, [terminalSize.columns, logger]);
   
   const uiState: UIState = useMemo(() => {
     const widthFraction = 0.9;
@@ -625,7 +621,7 @@ const TerminalContent: React.FC<TerminalProps> = ({
   }, [input, isProcessing, onMessage, scrollControls, scrollState.isAutoScrollEnabled, logger]);
 
   return (
-    <App
+    <AppLayout
       context={context}
       onMessage={onMessage}
       isProcessing={isProcessing}

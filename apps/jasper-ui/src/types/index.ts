@@ -48,6 +48,7 @@ export interface Tool {
   description: string;
   parameters: Record<string, any>;
   execute: (params: Record<string, any>) => Promise<any>;
+  prompt?: string; // AI-specific guidance for this tool
 }
 
 export interface LLMProvider {
@@ -67,6 +68,65 @@ export interface ConversationContext {
   isCompacting?: boolean; // Flag to show compaction indicator
 }
 
+export interface MCPServerConfig {
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  url?: string;
+  httpUrl?: string;
+  headers?: Record<string, string>;
+  timeout?: number;
+  trust?: boolean;
+  description?: string;
+  includeTools?: string[];
+  excludeTools?: string[];
+  oauth?: {
+    enabled: boolean;
+    clientId?: string;
+    clientSecret?: string;
+    authorizationUrl?: string;
+    tokenUrl?: string;
+    scopes?: string[];
+  };
+}
+
+export interface ServiceDefinition {
+  name?: string; // Optional top-level name for compatibility
+  mcpServer: string;
+  config: {
+    name: string;
+    type: 'process' | 'docker';
+    command?: string;
+    args?: string[];
+    workingDir?: string;
+    image?: string;
+    ports?: Record<string, string>;
+    volumes?: Record<string, string>;
+    env?: Record<string, string>;
+    healthCheck?: {
+      url?: string;
+      command?: string;
+      interval?: number;
+    };
+    autoRestart?: boolean;
+    restartDelay?: number;
+    maxRestarts?: number;
+  };
+  deployment?: {
+    environment?: string;
+    region?: string;
+    namespace?: string;
+  };
+}
+
+export interface DeploymentProfile {
+  description: string;
+  services: string[];
+  parallel?: boolean;
+  autoStart?: boolean;
+}
+
 export interface JasperConfig {
   llmProvider: 'google-ai' | 'custom';
   apiKey?: string;
@@ -75,6 +135,9 @@ export interface JasperConfig {
   model?: string;
   apiThrottleMs?: number;
   tokenLimit?: number; // Default: 10000
+  mcpServers?: Record<string, MCPServerConfig>;
+  serviceDefinitions?: Record<string, ServiceDefinition>;
+  deploymentProfiles?: Record<string, DeploymentProfile>;
 }
 
 export type PermissionResponse = 'yes' | 'session' | 'no';

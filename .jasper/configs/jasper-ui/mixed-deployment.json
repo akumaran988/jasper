@@ -1,0 +1,227 @@
+{
+  "llmProvider": "google-ai",
+  "model": "gemini-2.5-flash",
+  "maxIterations": 15,
+  "tokenLimit": 20000,
+  "apiThrottleMs": 2000,
+  "mcpServers": {
+    "local-development": {
+      "mode": "local",
+      "autoStart": true,
+      "httpUrl": "http://localhost:8081/mcp/tools",
+      "description": "Local development services",
+      "trust": true,
+      "timeout": 30000,
+      "serverConfig": {
+        "script": "../mcp-server/src/index.ts",
+        "port": 8081,
+        "args": ["start", "--server=service-manager", "--port=8081"],
+        "env": {
+          "NODE_ENV": "development",
+          "LOG_LEVEL": "debug"
+        }
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    "local-databases": {
+      "mode": "local", 
+      "autoStart": true,
+      "httpUrl": "http://localhost:8082/mcp/tools",
+      "description": "Local database management via service-manager",
+      "trust": true,
+      "timeout": 30000,
+      "serverConfig": {
+        "script": "../mcp-server/src/index.ts",
+        "port": 8082,
+        "args": ["start", "--server=service-manager", "--port=8082"],
+        "env": {
+          "NODE_ENV": "development",
+          "SERVICE_TYPE": "database"
+        }
+      }
+    },
+    "staging-environment": {
+      "mode": "remote",
+      "httpUrl": "https://staging-mcp.example.com:8080/mcp/tools",
+      "description": "Staging environment services",
+      "trust": false,
+      "timeout": 45000,
+      "healthCheck": true,
+      "retryAttempts": 3,
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${STAGING_MCP_API_KEY}"
+      }
+    },
+    "production-services": {
+      "mode": "remote",
+      "httpUrl": "https://prod-mcp.example.com:8080/mcp/tools", 
+      "description": "Production infrastructure",
+      "trust": false,
+      "timeout": 60000,
+      "healthCheck": true,
+      "retryAttempts": 5,
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${PROD_MCP_API_KEY}"
+      }
+    }
+  },
+  "serviceDefinitions": {
+    "local-api-server": {
+      "mcpServer": "local-development",
+      "config": {
+        "name": "api-server",
+        "type": "process",
+        "command": "npm",
+        "args": ["run", "dev"],
+        "workingDir": "./backend/api",
+        "env": {
+          "NODE_ENV": "development",
+          "PORT": "3000",
+          "DATABASE_URL": "postgresql://localhost:5432/dev"
+        },
+        "healthCheck": {
+          "url": "http://localhost:3000/health",
+          "interval": 30
+        },
+        "autoRestart": true,
+        "restartDelay": 5,
+        "maxRestarts": 3
+      },
+      "deployment": {
+        "environment": "local"
+      }
+    },
+    "local-postgres": {
+      "mcpServer": "local-databases",
+      "config": {
+        "name": "postgres-dev",
+        "type": "docker",
+        "image": "postgres:15-alpine",
+        "ports": {
+          "5432": "5432"
+        },
+        "volumes": {
+          "./data/postgres": "/var/lib/postgresql/data"
+        },
+        "env": {
+          "POSTGRES_DB": "dev",
+          "POSTGRES_USER": "developer",
+          "POSTGRES_PASSWORD": "devpass123"
+        },
+        "healthCheck": {
+          "command": "pg_isready -U developer",
+          "interval": 15
+        },
+        "autoRestart": true
+      },
+      "deployment": {
+        "environment": "local"
+      }
+    },
+    "local-redis": {
+      "mcpServer": "local-databases",
+      "config": {
+        "name": "redis-dev",
+        "type": "docker", 
+        "image": "redis:7-alpine",
+        "ports": {
+          "6379": "6379"
+        },
+        "volumes": {
+          "./data/redis": "/data"
+        },
+        "healthCheck": {
+          "command": "redis-cli ping",
+          "interval": 15
+        },
+        "autoRestart": true
+      },
+      "deployment": {
+        "environment": "local"
+      }
+    },
+    "staging-api": {
+      "mcpServer": "staging-environment",
+      "config": {
+        "name": "api-staging",
+        "type": "docker",
+        "image": "my-app:staging",
+        "ports": {
+          "8000": "3000"
+        },
+        "env": {
+          "NODE_ENV": "staging",
+          "DATABASE_URL": "${STAGING_DATABASE_URL}",
+          "REDIS_URL": "${STAGING_REDIS_URL}"
+        },
+        "healthCheck": {
+          "url": "http://localhost:8000/health",
+          "interval": 60
+        },
+        "autoRestart": true,
+        "maxRestarts": 5
+      },
+      "deployment": {
+        "environment": "remote",
+        "region": "us-east-1",
+        "namespace": "staging"
+      }
+    },
+    "production-worker": {
+      "mcpServer": "production-services",
+      "config": {
+        "name": "background-worker",
+        "type": "docker",
+        "image": "my-app:latest",
+        "env": {
+          "NODE_ENV": "production",
+          "WORKER_TYPE": "background",
+          "DATABASE_URL": "${PROD_DATABASE_URL}",
+          "REDIS_URL": "${PROD_REDIS_URL}"
+        },
+        "healthCheck": {
+          "command": "/app/health-check.sh",
+          "interval": 120
+        },
+        "autoRestart": true,
+        "maxRestarts": 10,
+        "restartDelay": 30
+      },
+      "deployment": {
+        "environment": "remote",
+        "region": "us-west-2", 
+        "namespace": "production"
+      }
+    }
+  },
+  "deploymentProfiles": {
+    "full-local": {
+      "description": "Full local development stack",
+      "services": ["local-api-server", "local-postgres", "local-redis"],
+      "parallel": true,
+      "autoStart": true
+    },
+    "staging-test": {
+      "description": "Deploy to staging for testing",
+      "services": ["staging-api"],
+      "parallel": false,
+      "autoStart": false
+    },
+    "production-deploy": {
+      "description": "Production deployment",
+      "services": ["production-worker"],
+      "parallel": false,
+      "autoStart": false
+    },
+    "hybrid-dev": {
+      "description": "Local dev with staging database",
+      "services": ["local-api-server", "local-redis"],
+      "parallel": true,
+      "autoStart": true
+    }
+  }
+}

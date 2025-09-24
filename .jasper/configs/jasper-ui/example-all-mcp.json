@@ -1,0 +1,61 @@
+{
+  "llmProvider": "google-ai",
+  "model": "gemini-2.5-flash-lite",
+  "maxIterations": 10,
+  "tokenLimit": 10000,
+  "apiThrottleMs": 3000,
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"],
+      "description": "Filesystem access MCP server",
+      "trust": false,
+      "timeout": 30000
+    },
+    "github": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-github"],
+      "description": "GitHub integration MCP server",
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your-github-token"
+      },
+      "trust": false,
+      "timeout": 30000,
+      "includeTools": ["create_or_update_file", "search_repositories"]
+    },
+    "web-search": {
+      "url": "sse://localhost:3001/search",
+      "description": "Web search MCP server via SSE",
+      "headers": {
+        "Authorization": "Bearer your-api-token"
+      },
+      "trust": true,
+      "timeout": 15000
+    },
+    "custom-http": {
+      "httpUrl": "http://localhost:8080/mcp",
+      "description": "Custom HTTP MCP server",
+      "headers": {
+        "X-API-Key": "your-api-key",
+        "Content-Type": "application/json"
+      },
+      "trust": false,
+      "timeout": 20000,
+      "excludeTools": ["dangerous_operation"]
+    },
+    "oauth-server": {
+      "httpUrl": "https://your-mcp-server.com/api",
+      "description": "MCP server with OAuth authentication",
+      "oauth": {
+        "enabled": true,
+        "clientId": "your-client-id",
+        "clientSecret": "your-client-secret",
+        "authorizationUrl": "https://your-mcp-server.com/oauth/authorize",
+        "tokenUrl": "https://your-mcp-server.com/oauth/token",
+        "scopes": ["read", "write"]
+      },
+      "trust": true,
+      "timeout": 30000
+    }
+  }
+}

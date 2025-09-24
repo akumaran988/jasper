@@ -1,0 +1,107 @@
+{
+  "name": "production-deployment",
+  "description": "Production-ready service configuration with monitoring",
+  "services": [
+    {
+      "name": "nginx-proxy",
+      "type": "docker",
+      "image": "nginx:stable-alpine",
+      "containerName": "prod-nginx",
+      "ports": {
+        "80": "80",
+        "443": "443"
+      },
+      "volumes": {
+        "/etc/nginx/conf.d": "/etc/nginx/conf.d",
+        "/etc/ssl/certs": "/etc/ssl/certs",
+        "/var/log/nginx": "/var/log/nginx"
+      },
+      "dockerArgs": ["--memory=256m", "--restart=unless-stopped"],
+      "healthCheck": {
+        "url": "http://localhost/health",
+        "interval": 15,
+        "timeout": 3,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 2,
+      "maxRestarts": 3
+    },
+    {
+      "name": "app-server",
+      "type": "docker",
+      "image": "myapp:latest",
+      "containerName": "prod-app",
+      "ports": {
+        "3000": "3000"
+      },
+      "volumes": {
+        "/var/log/app": "/app/logs",
+        "/app/uploads": "/app/uploads"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "3000",
+        "DATABASE_URL": "postgresql://produser:prodpass@db:5432/proddb",
+        "REDIS_URL": "redis://redis:6379",
+        "JWT_SECRET": "${JWT_SECRET}",
+        "LOG_LEVEL": "info"
+      },
+      "dockerArgs": ["--memory=1g", "--cpus=2", "--restart=unless-stopped"],
+      "healthCheck": {
+        "url": "http://localhost:3000/api/health",
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 10,
+      "maxRestarts": 3
+    },
+    {
+      "name": "worker-queue",
+      "type": "docker",
+      "image": "myapp:latest",
+      "containerName": "prod-worker",
+      "command": "node",
+      "args": ["worker.js"],
+      "env": {
+        "NODE_ENV": "production",
+        "DATABASE_URL": "postgresql://produser:prodpass@db:5432/proddb",
+        "REDIS_URL": "redis://redis:6379",
+        "WORKER_CONCURRENCY": "5"
+      },
+      "dockerArgs": ["--memory=512m", "--cpus=1", "--restart=unless-stopped"],
+      "healthCheck": {
+        "command": "node -e \"require('./health-check.js')\"",
+        "interval": 60,
+        "timeout": 10,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 15,
+      "maxRestarts": 5
+    },
+    {
+      "name": "monitoring-agent",
+      "type": "process",
+      "command": "./monitoring-agent",
+      "args": ["--config", "prod.conf"],
+      "workingDir": "/opt/monitoring",
+      "env": {
+        "ENVIRONMENT": "production",
+        "METRICS_ENDPOINT": "https://metrics.company.com/api/v1",
+        "API_KEY": "${MONITORING_API_KEY}"
+      },
+      "healthCheck": {
+        "command": "curl -f http://localhost:9090/health || exit 1",
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3
+      },
+      "autoRestart": true,
+      "restartDelay": 5,
+      "maxRestarts": 3
+    }
+  ]
+}

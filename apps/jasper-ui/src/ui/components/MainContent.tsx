@@ -54,7 +54,7 @@ export const MainContent = ({
     <>
       {/* Welcome Message - only show when no conversation */}
       {context.messages.length === 0 && (
-        <Box marginTop={1}>
+        <Box marginTop={1} key="welcome-message">
           <WelcomeMessage />
         </Box>
       )}

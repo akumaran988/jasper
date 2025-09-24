@@ -1,0 +1,12 @@
+{
+  "mode": "local",
+  "port": 8081,
+  "auth": "none",
+  "maxServices": 50,
+  "logRetention": 7,
+  "allowedHosts": [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000"
+  ]
+}
