@@ -107,7 +107,7 @@ export const MCP_TOOLS = [
   },
   {
     name: 'deploy_service',
-    description: 'Smart service deployment: finds existing service OR creates from template, then starts it AI_PROMPT: USE THIS for "start redis", "start postgres", "run database" - handles the complete flow of create-if-needed + start. For explicit "create" requests, use create_service instead.',
+    description: 'Standard service deployment with default local config AI_PROMPT: USE THIS ONLY for simple local deployment like "start redis", "start postgres", "run database" without any cross-environment settings. For cross-environment requests like "Redis with staging config" or "postgres with production settings", use deploy_cross_environment instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -119,16 +119,16 @@ export const MCP_TOOLS = [
   },
   {
     name: 'deploy_cross_environment',
-    description: 'Deploy service with environment variables from different environments AI_PROMPT: USE THIS for "run API locally with staging database", "start Redis with production config", "use staging environment variables" - intelligently copies env vars between environments',
+    description: 'Deploy service in one environment using configuration from another environment AI_PROMPT: ALWAYS USE THIS for cross-environment requests like "start Redis locally with staging settings", "run API with production database", "deploy locally with staging config". This is THE PRIMARY TOOL for cross-environment deployment - it intelligently copies environment variables and deploys services.',
     inputSchema: {
       type: 'object',
       properties: {
-        serviceName: { type: 'string', description: 'Service name or type (e.g., "api-server", "redis")' },
-        sourceEnvironment: { type: 'string', enum: ['local', 'staging', 'production'], description: 'Environment to copy variables FROM' },
-        targetEnvironment: { type: 'string', enum: ['local', 'staging', 'production'], description: 'Environment to deploy TO', default: 'local' },
-        categories: { type: 'array', items: { type: 'string' }, description: 'Specific categories to copy (database, cache, auth, api)', default: [] }
+        serviceName: { type: 'string', description: 'Service type (e.g., "redis", "postgres", "api", "mysql")' },
+        userRequest: { type: 'string', description: 'User\'s original request for AI analysis (e.g., "start redis locally with staging settings")' },
+        sourceEnvironment: { type: 'string', enum: ['local', 'staging', 'production'], description: 'Environment to copy variables FROM (optional if userRequest provided)' },
+        targetEnvironment: { type: 'string', enum: ['local', 'staging', 'production'], description: 'Environment to deploy TO (optional if userRequest provided)', default: 'local' }
       },
-      required: ['serviceName', 'sourceEnvironment']
+      required: ['serviceName']
     }
   },
   {
@@ -375,7 +375,7 @@ export function createMCPToolHandlers() {
       };
     },
     'deploy_service': async (params: any) => {
-      const { serviceName, environment = 'local' } = params;
+      const { serviceName } = params;
       
       // Step 1: Check if service already exists
       const existingServices = await serviceManager.getAllServices();
@@ -504,50 +504,53 @@ export function createMCPToolHandlers() {
           const sourceEnv = sourceEnvironment || recommendation.sourceEnv;
           const targetEnv = targetEnvironment || recommendation.targetEnv;
 
-          // Get the base service configuration (similar to deploy_service logic)
+          // Find matching service definition from user's existing services or use generic template
           let serviceConfig;
-          const lowerServiceName = serviceName.toLowerCase();
+          const existingServices = await serviceManager.getAllServices();
+          const matchingService = existingServices.find(s =>
+            s.config.name.toLowerCase().includes(serviceName.toLowerCase()) ||
+            serviceName.toLowerCase().includes(s.config.name.toLowerCase())
+          );
 
-          if (lowerServiceName.includes('redis')) {
+          if (matchingService) {
+            // Use existing service as template
             serviceConfig = {
-              name: `redis-${sourceEnv}`,
-              type: 'docker' as const,
-              image: 'redis:7-alpine',
-              ports: { '6379': '6379' },
-              env: {}
-            };
-          } else if (lowerServiceName.includes('postgres')) {
-            serviceConfig = {
-              name: `postgres-${sourceEnv}`,
-              type: 'docker' as const,
-              image: 'postgres:15-alpine',
-              ports: { '5432': '5432' },
-              env: {
-                'POSTGRES_DB': 'dev',
-                'POSTGRES_USER': 'developer',
-                'POSTGRES_PASSWORD': 'devpass'
-              }
-            };
-          } else if (lowerServiceName.includes('api')) {
-            serviceConfig = {
-              name: `api-${sourceEnv}`,
-              type: 'process' as const,
-              command: 'npm',
-              args: ['run', 'dev'],
-              workingDir: './',
-              env: {
-                'NODE_ENV': 'development',
-                'PORT': '3000'
-              }
+              ...matchingService.config,
+              name: `${matchingService.config.name}-${sourceEnv}-config`,
+              env: matchingService.config.env || {}
             };
           } else {
-            return {
-              action: 'unsupported_service',
-              serviceName,
-              message: `Service type '${serviceName}' not supported for cross-environment deployment. Supported: redis, postgres, api`,
-              recommendation: recommendation.recommendation,
-              warnings: recommendation.warnings
-            };
+            // Fallback to generic templates
+            const lowerServiceName = serviceName.toLowerCase();
+            if (lowerServiceName.includes('redis')) {
+              serviceConfig = {
+                name: `redis-${sourceEnv}-config`,
+                type: 'docker' as const,
+                image: 'redis:7-alpine',
+                ports: { '6379': '6379' },
+                env: {}
+              };
+            } else if (lowerServiceName.includes('postgres')) {
+              serviceConfig = {
+                name: `postgres-${sourceEnv}-config`,
+                type: 'docker' as const,
+                image: 'postgres:15-alpine',
+                ports: { '5432': '5432' },
+                env: {
+                  'POSTGRES_DB': 'dev',
+                  'POSTGRES_USER': 'developer',
+                  'POSTGRES_PASSWORD': 'devpass'
+                }
+              };
+            } else {
+              return {
+                action: 'unsupported_service',
+                serviceName,
+                message: `No existing service found matching '${serviceName}' and no generic template available. Please create the service first or use a supported service type.`,
+                recommendation: recommendation.recommendation,
+                warnings: recommendation.warnings
+              };
+            }
           }
 
           // Extract relevant environment variables from source environment
@@ -580,12 +583,28 @@ export function createMCPToolHandlers() {
           const sourceEnv = sourceEnvironment || 'staging';
           const targetEnv = targetEnvironment || 'local';
 
-          // Create base service config
-          const serviceConfig = {
-            name: `${serviceName}-${sourceEnv}`,
-            type: 'docker' as const,
-            env: {}
-          };
+          // Find existing service or use generic fallback
+          let serviceConfig;
+          const existingServices = await serviceManager.getAllServices();
+          const matchingService = existingServices.find(s =>
+            s.config.name.toLowerCase().includes(serviceName.toLowerCase()) ||
+            serviceName.toLowerCase().includes(s.config.name.toLowerCase())
+          );
+
+          if (matchingService) {
+            // Use existing service as template
+            serviceConfig = {
+              ...matchingService.config,
+              name: `${matchingService.config.name}-${sourceEnv}-direct`,
+              env: matchingService.config.env || {}
+            };
+          } else {
+            return {
+              action: 'service_not_found',
+              serviceName,
+              message: `No service found matching '${serviceName}'. Available services: ${existingServices.map(s => s.config.name).join(', ') || 'none'}. Please create the service first or use deploy_service for templates.`
+            };
+          }
 
           // Extract environment variables
           const relevantEnvVars = envManager.extractRelevantEnvVars(sourceEnv, serviceConfig);

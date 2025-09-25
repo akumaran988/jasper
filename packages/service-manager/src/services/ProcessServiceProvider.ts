@@ -1,6 +1,8 @@
 import { spawn, ChildProcess } from 'child_process';
 import psTree from 'ps-tree';
 import { promisify } from 'util';
+import * as path from 'path';
+import * as fs from 'fs';
 import type { IServiceProvider } from '../interfaces/IServiceProvider.js';
 import type { ServiceInstance, ServiceStats } from '../types.js';
 import type { ILogger } from '../interfaces/ILogger.js';
@@ -15,17 +17,31 @@ export class ProcessServiceProvider implements IServiceProvider {
 
   async start(service: ServiceInstance): Promise<void> {
     const { command, args = [], env = {}, workingDir } = service.config;
-    
+
     if (!command) {
       throw new Error('Command is required for process services');
     }
 
-    this.logger.addLog(service.id, 'info', `Starting process: ${command} ${args.join(' ')}`);
+    // Validate and resolve working directory
+    const resolvedWorkingDir = this.resolveWorkingDirectory(workingDir);
 
-    const childProcess = spawn(command, args, {
-      cwd: workingDir,
+    this.logger.addLog(service.id, 'info', `Starting process: ${command} ${args.join(' ')}`);
+    this.logger.addLog(service.id, 'debug', `Working directory: ${resolvedWorkingDir}`);
+
+    // Windows-specific command handling
+    const { finalCommand, finalArgs } = this.prepareCommandForPlatform(command, args);
+
+    // Log the resolved command if it changed
+    if (finalCommand !== command) {
+      this.logger.addLog(service.id, 'debug', `Resolved command: ${finalCommand} ${finalArgs.join(' ')}`);
+    }
+
+    const childProcess = spawn(finalCommand, finalArgs, {
+      cwd: resolvedWorkingDir,
       env: { ...process.env, ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: process.platform === 'win32', // Use shell on Windows for better command resolution
+      windowsHide: true, // Hide console window on Windows
     });
 
     if (!childProcess.pid) {
@@ -71,33 +87,13 @@ export class ProcessServiceProvider implements IServiceProvider {
     this.logger.addLog(service.id, 'info', `Stopping process with PID: ${service.pid}`);
 
     try {
-      // Get all child processes
-      const children = await psTreeAsync(service.pid);
-      
-      // Kill child processes first
-      for (const child of children) {
-        try {
-          process.kill(parseInt(child.PID), 'SIGTERM');
-        } catch (error) {
-          // Process might already be dead
-          this.logger.addLog(service.id, 'debug', `Could not kill child process ${child.PID}: ${error}`);
-        }
+      if (process.platform === 'win32') {
+        // Windows process termination
+        await this.stopWindowsProcess(service);
+      } else {
+        // Unix/Linux process termination
+        await this.stopUnixProcess(service);
       }
-
-      // Kill main process
-      process.kill(service.pid, 'SIGTERM');
-
-      // Wait for graceful shutdown, then force kill if needed
-      setTimeout(() => {
-        if (service.pid) {
-          try {
-            process.kill(service.pid, 'SIGKILL');
-            this.logger.addLog(service.id, 'warn', `Force killed process ${service.pid}`);
-          } catch (error) {
-            // Process already dead
-          }
-        }
-      }, 5000);
 
       this.processes.delete(service.id);
 
@@ -174,6 +170,237 @@ export class ProcessServiceProvider implements IServiceProvider {
       return true;
     } catch (error) {
       return false;
+    }
+  }
+
+  private resolveWorkingDirectory(workingDir?: string): string {
+    if (!workingDir) {
+      return process.cwd();
+    }
+
+    // Resolve relative paths to absolute paths
+    const resolved = path.resolve(workingDir);
+
+    // Validate that the directory exists
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`Working directory does not exist: ${resolved}`);
+    }
+
+    // Validate that it's actually a directory
+    const stats = fs.statSync(resolved);
+    if (!stats.isDirectory()) {
+      throw new Error(`Working directory is not a directory: ${resolved}`);
+    }
+
+    return resolved;
+  }
+
+  private prepareCommandForPlatform(command: string, args: string[]): { finalCommand: string; finalArgs: string[] } {
+    if (process.platform === 'win32') {
+      // Windows-specific handling
+
+      // Handle executable files with full paths or relative paths
+      if (command.endsWith('.exe')) {
+        const resolvedCommand = this.resolveExecutablePath(command);
+        return {
+          finalCommand: resolvedCommand,
+          finalArgs: args
+        };
+      }
+
+      // Handle common Node.js commands
+      if (command === 'npm' || command === 'yarn' || command === 'node') {
+        return {
+          finalCommand: command + '.cmd', // Use .cmd version on Windows
+          finalArgs: args
+        };
+      }
+
+      // Handle PowerShell scripts
+      if (command.endsWith('.ps1')) {
+        const resolvedScript = this.resolveScriptPath(command);
+        return {
+          finalCommand: 'powershell.exe',
+          finalArgs: ['-ExecutionPolicy', 'Bypass', '-File', resolvedScript, ...args]
+        };
+      }
+
+      // Handle batch files
+      if (command.endsWith('.bat') || command.endsWith('.cmd')) {
+        const resolvedScript = this.resolveScriptPath(command);
+        return {
+          finalCommand: 'cmd.exe',
+          finalArgs: ['/c', resolvedScript, ...args]
+        };
+      }
+
+      // Handle Windows executables without extension
+      // Try to find .exe version first
+      const possibleExe = command + '.exe';
+      if (this.fileExists(possibleExe)) {
+        const resolvedCommand = this.resolveExecutablePath(possibleExe);
+        return {
+          finalCommand: resolvedCommand,
+          finalArgs: args
+        };
+      }
+    }
+
+    // Default behavior for Unix/Linux/macOS or unhandled Windows commands
+    return {
+      finalCommand: command,
+      finalArgs: args
+    };
+  }
+
+  private resolveExecutablePath(exePath: string): string {
+    // If it's already an absolute path, validate and return
+    if (path.isAbsolute(exePath)) {
+      if (!fs.existsSync(exePath)) {
+        throw new Error(`Executable not found: ${exePath}`);
+      }
+      return exePath;
+    }
+
+    // If it's a relative path, resolve relative to current working directory
+    const resolvedPath = path.resolve(exePath);
+    if (fs.existsSync(resolvedPath)) {
+      return resolvedPath;
+    }
+
+    // If not found in current directory, try to find in common locations
+    const commonPaths = [
+      path.join(process.cwd(), exePath),
+      path.join(process.cwd(), 'bin', exePath),
+      path.join(process.cwd(), 'tools', exePath),
+      path.join(process.cwd(), 'executables', exePath),
+      path.join(process.cwd(), 'vendor', exePath),
+      path.join(__dirname, '..', '..', 'bin', exePath),
+    ];
+
+    for (const testPath of commonPaths) {
+      if (fs.existsSync(testPath)) {
+        return testPath;
+      }
+    }
+
+    // If still not found, return as-is and let spawn handle it
+    // This allows for executables in PATH or will fail with a descriptive error
+    return exePath;
+  }
+
+  private resolveScriptPath(scriptPath: string): string {
+    // If it's already an absolute path, validate and return
+    if (path.isAbsolute(scriptPath)) {
+      if (!fs.existsSync(scriptPath)) {
+        throw new Error(`Script not found: ${scriptPath}`);
+      }
+      return scriptPath;
+    }
+
+    // If it's a relative path, resolve relative to current working directory
+    const resolvedPath = path.resolve(scriptPath);
+    if (fs.existsSync(resolvedPath)) {
+      return resolvedPath;
+    }
+
+    // Try common script locations
+    const commonPaths = [
+      path.join(process.cwd(), scriptPath),
+      path.join(process.cwd(), 'scripts', scriptPath),
+      path.join(process.cwd(), 'tools', scriptPath),
+    ];
+
+    for (const testPath of commonPaths) {
+      if (fs.existsSync(testPath)) {
+        return testPath;
+      }
+    }
+
+    // Return as-is if not found in common locations
+    return scriptPath;
+  }
+
+  private fileExists(filePath: string): boolean {
+    try {
+      return fs.existsSync(filePath);
+    } catch {
+      return false;
+    }
+  }
+
+  private async stopWindowsProcess(service: ServiceInstance): Promise<void> {
+    const pid = service.pid!;
+
+    try {
+      // First try taskkill for graceful termination
+      const { spawn } = await import('child_process');
+      const taskkill = spawn('taskkill', ['/pid', pid.toString(), '/t'], {
+        stdio: 'ignore',
+        windowsHide: true
+      });
+
+      await new Promise<void>((resolve) => {
+        taskkill.on('close', () => resolve());
+        // Timeout after 5 seconds
+        setTimeout(resolve, 5000);
+      });
+
+      // Check if process is still running
+      if (await this.isProcessRunning(pid)) {
+        // Force kill if still running
+        const forceKill = spawn('taskkill', ['/pid', pid.toString(), '/t', '/f'], {
+          stdio: 'ignore',
+          windowsHide: true
+        });
+
+        await new Promise<void>((resolve) => {
+          forceKill.on('close', () => resolve());
+          setTimeout(resolve, 3000);
+        });
+
+        this.logger.addLog(service.id, 'warn', `Force killed Windows process ${pid}`);
+      }
+
+    } catch (error) {
+      this.logger.addLog(service.id, 'error', `Failed to stop Windows process: ${error}`);
+    }
+  }
+
+  private async stopUnixProcess(service: ServiceInstance): Promise<void> {
+    const pid = service.pid!;
+
+    try {
+      // Get all child processes
+      const children = await psTreeAsync(pid);
+
+      // Kill child processes first
+      for (const child of children) {
+        try {
+          process.kill(parseInt(child.PID), 'SIGTERM');
+        } catch (error) {
+          // Process might already be dead
+          this.logger.addLog(service.id, 'debug', `Could not kill child process ${child.PID}: ${error}`);
+        }
+      }
+
+      // Kill main process
+      process.kill(pid, 'SIGTERM');
+
+      // Wait for graceful shutdown, then force kill if needed
+      setTimeout(() => {
+        if (service.pid) {
+          try {
+            process.kill(service.pid, 'SIGKILL');
+            this.logger.addLog(service.id, 'warn', `Force killed Unix process ${service.pid}`);
+          } catch (error) {
+            // Process already dead
+          }
+        }
+      }, 5000);
+
+    } catch (error) {
+      this.logger.addLog(service.id, 'error', `Failed to stop Unix process: ${error}`);
     }
   }
 }

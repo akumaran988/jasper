@@ -144,6 +144,35 @@
         "environment": "local"
       }
     },
+    "staging-redis": {
+      "mcpServer": "staging-environment",
+      "config": {
+        "name": "redis-staging",
+        "type": "docker", 
+        "image": "redis:7-alpine",
+        "ports": {
+          "6380": "6380"
+        },
+        "volumes": {
+          "./data/redis": "/data"
+        },
+        "env": {
+          "NODE_ENV": "staging",
+          "DATABASE_URL": "Staging_database_url",
+          "REDIS_URL": "STAGING_REDIS_URL"
+        },
+        "healthCheck": {
+          "command": "redis-cli ping",
+          "interval": 15
+        },
+        "autoRestart": true
+      },
+      "deployment": {
+        "environment": "remote",
+        "region": "us-east-1",
+        "namespace": "staging"
+      }
+    },
     "staging-api": {
       "mcpServer": "staging-environment",
       "config": {
