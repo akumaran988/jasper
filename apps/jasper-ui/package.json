@@ -54,7 +54,7 @@
   "license": "MIT",
   "dependencies": {
     "@google/genai": "^1.17.0",
-    "@jasper/service-manager": "workspace:*",
+    "@jasper/service-manager": "file:../../packages/service-manager",
     "@modelcontextprotocol/sdk": "^1.18.1",
     "ansi-escapes": "^7.1.0",
     "chalk": "^4.1.2",

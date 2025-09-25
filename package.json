@@ -1,0 +1,18 @@
+{
+  "name": "jasper-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspace=apps/jasper-ui",
+    "start": "npm run start --workspace=apps/jasper-ui",
+    "install-all": "npm install --workspaces"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
