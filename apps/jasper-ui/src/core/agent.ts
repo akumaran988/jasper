@@ -81,18 +81,20 @@ CRITICAL: If you include ANY tool_calls in your response, should_continue MUST b
 DO NOT mention should_continue in your "content" field - users should never see this technical detail.
 
 
+${this.buildTodoGuidance()}
+
 Available Tools:
 ${this.context.tools.map(tool => {
   const schema = JSON.stringify(tool.parameters, null, 2);
   let toolDesc = `- ${tool.name}: ${tool.description}
   Parameters Schema:
   ${schema}`;
-  
+
   // Add tool-specific AI prompt if available
   if (tool.prompt) {
     toolDesc += `\n  AI GUIDANCE: ${tool.prompt}`;
   }
-  
+
   return toolDesc;
 }).join('\n\n')}
 
@@ -185,6 +187,51 @@ Examples of MANDATORY immediate action:
 - "Let me check the directory" → MUST include file_ops tool_call
 
 CRITICAL: When user asks you to DO something (ping, list files, run commands, etc.), you MUST include the actual tool_calls in your response. Don't just talk about what you would do - actually do it by calling the appropriate tools!`;
+  }
+
+  private buildTodoGuidance(): string {
+    // Check if todo tools are available
+    const todoTools = this.context.tools.filter(tool =>
+      tool.name === 'todo_ops'
+    );
+
+    if (todoTools.length === 0) {
+      return ''; // No todo tools available, don't include guidance
+    }
+
+    return `
+TASK PLANNING AND TODO MANAGEMENT:
+CRITICAL: You have access to todo management tools for complex, multi-step tasks. USE THEM PROACTIVELY!
+
+WHEN TO USE TODO TOOLS:
+- ALWAYS use todo_ops with operation="create" when starting complex tasks requiring 3+ steps
+- Break down large tasks into specific, actionable todo items
+- Create todos BEFORE beginning work to track progress
+- Mark todos as "in_progress" using todo_ops with operation="update_status" when starting work
+- Mark todos as "completed" using todo_ops with operation="update_status" when finished
+- Use todo_ops with operation="list" to check current progress and remaining tasks
+
+TODO USAGE PATTERN:
+1. User requests complex task → IMMEDIATELY create ALL todos at once using create_batch operation
+2. Start work → Mark first todo as "in_progress" using update_status
+3. Complete step → Mark as "completed", move to next todo
+4. Continue until all todos are completed
+
+BATCH CREATION:
+- Use todo_ops with operation="create_batch" and todos=[{title, description, priority}] for multiple todos
+- This is MORE EFFICIENT than multiple create calls
+- Example: {"operation": "create_batch", "todos": [{"title": "Step 1"}, {"title": "Step 2"}]}
+
+EXAMPLES OF WHEN TO USE TODOS:
+✅ "Implement user authentication system" → Create todos for: database setup, auth routes, password hashing, session management, testing
+✅ "Set up development environment" → Create todos for: install dependencies, configure database, setup environment variables, run initial tests
+✅ "Debug and fix performance issues" → Create todos for: identify bottlenecks, profile code, optimize database queries, test performance improvements
+✅ "Deploy application to production" → Create todos for: build application, configure server, setup CI/CD, deploy and verify
+
+❌ "What is the current time?" → Single simple query, no todos needed
+❌ "Show me the file contents" → Single action, no todos needed
+
+IMPORTANT: Create todos at the START of complex tasks, not at the end. This helps track progress and ensures nothing is forgotten.`;
   }
 
   private addSystemMessage(content: string): void {

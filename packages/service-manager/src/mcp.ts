@@ -187,6 +187,9 @@ export function createMCPToolHandlers() {
     [dockerProvider, processProvider]
   );
 
+  // Initialize environment manager
+  const environmentManager = new EnvironmentManager();
+
   // Debug: Check what providers are registered
   console.log('🔍 DEBUG: Available providers:', {
     docker: dockerProvider.type,

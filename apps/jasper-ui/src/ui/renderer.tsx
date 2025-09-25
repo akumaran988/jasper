@@ -1002,16 +1002,66 @@ const StructuredToolResultRenderer: React.FC<{
   
   // Helper function to check if content should be collapsed
   const shouldCollapseContent = (content: string) => {
-    return true; // Always collapse tool results by default
+    // Check if we have a display handler for this tool
+    try {
+      const context: DisplayContext = {
+        toolName: toolName,
+        operation: toolResult.parameters?.operation,
+        parameters: toolResult.parameters || {},
+        result: toolResult,
+        isExpanded: false,
+        isFocused: false
+      };
+
+      // Use display registry to determine collapse behavior
+      if (displayRegistry.hasHandler(toolName)) {
+        return displayRegistry.shouldCollapse(context);
+      }
+    } catch (error) {
+      // Fallback to default behavior on error
+      console.warn('Error checking shouldCollapse for tool:', toolName, error);
+    }
+
+    return true; // Always collapse tool results by default for unknown tools
   };
 
   // Get the tool name from the result ID or tool registry
-  const toolName = toolResult.id.includes('_') ? 
-    toolResult.id.split('_')[0] : 
+  const toolName = toolResult.id.includes('_') ?
+    toolResult.id.substring(0, toolResult.id.lastIndexOf('_')) :
     globalToolRegistry.getAll().find(t => t.name)?.name || 'unknown';
 
   if (toolResult.success) {
-    // Handle successful execution
+    // Check if we have a display handler for this tool
+    if (displayRegistry.hasHandler(toolName)) {
+      try {
+        const context: DisplayContext = {
+          toolName: toolName,
+          operation: toolResult.parameters?.operation,
+          parameters: toolResult.parameters || {},
+          result: toolResult,
+          isExpanded: isExpanded,
+          isFocused: isFocused
+        };
+
+        const displayResult = displayRegistry.formatToolResult(context);
+
+        // Use display handler's formatted content
+        return (
+          <Box flexDirection="column" marginLeft={2}>
+            {displayResult.content.split('\n').map((line: string, lineIndex: number) => (
+              <Box key={lineIndex}>
+                <Text>{line}</Text>
+              </Box>
+            ))}
+          </Box>
+        );
+      } catch (error) {
+        console.warn('Error using display handler for tool:', toolName, error);
+        // Fall through to default handling
+      }
+    }
+
+    // Default handling for tools without display handlers
     let content = '';
     if (toolResult.result) {
       // For file operations, show the actual content, not JSON
@@ -1028,18 +1078,18 @@ const StructuredToolResultRenderer: React.FC<{
           // For directory listing operations (list_dir), format as tree structure
           const formatDirectoryTree = (items: any[]) => {
             let output: string[] = [];
-            
+
             items.forEach((item, index) => {
               const isLast = index === items.length - 1;
               const prefix = isLast ? '└── ' : '├── ';
               const icon = item.type === 'directory' ? '📁 ' : '📄 ';
-              
+
               output.push(`${prefix}${icon}${item.name}`);
             });
-            
+
             return output.join('\n');
           };
-          
+
           content = formatDirectoryTree(toolResult.result.items);
         } else {
           // Fallback to JSON for other structured results
@@ -1047,7 +1097,7 @@ const StructuredToolResultRenderer: React.FC<{
         }
       }
     }
-    
+
     if (!content) return null;
     
     const shouldCollapse = shouldCollapseContent(content);

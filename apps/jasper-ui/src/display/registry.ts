@@ -2,6 +2,7 @@ import { ToolDisplayHandler, DisplayContext, DisplayResult } from './types.js';
 import { FileOpsDisplayHandler } from './handlers/fileOpsHandler.js';
 import { BashDisplayHandler } from './handlers/bashHandler.js';
 import { WebFetchDisplayHandler } from './handlers/webFetchHandler.js';
+import { TodoDisplayHandler } from './handlers/todoHandler.js';
 import { DefaultDisplayHandler } from './handlers/defaultHandler.js';
 
 export class DisplayRegistry {
@@ -12,6 +13,7 @@ export class DisplayRegistry {
     this.registerHandler(new FileOpsDisplayHandler());
     this.registerHandler(new BashDisplayHandler());
     this.registerHandler(new WebFetchDisplayHandler());
+    this.registerHandler(new TodoDisplayHandler());
   }
   
   /**
