@@ -25,8 +25,8 @@ export const enhancedMcpCommands: SlashCommand[] = [
       // MCP Servers
       console.log('\n📡 MCP Servers:');
       Object.entries(status.mcpStatus).forEach(([name, serverStatus]) => {
-        const icon = serverStatus.status === 'connected' ? '✅' : '❌';
-        console.log(`  ${icon} ${name}: ${serverStatus.status}`);
+        const icon = serverStatus === 'connected' ? '✅' : '❌';
+        console.log(`  ${icon} ${name}: ${serverStatus}`);
       });
 
       // Server Manager Status

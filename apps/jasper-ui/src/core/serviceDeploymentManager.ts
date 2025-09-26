@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 
 export interface ServiceDefinition {
-  name: string;
+  name?: string;
   mcpServer: string; // Reference to MCP server ID
   config: {
     name: string;
@@ -23,7 +23,7 @@ export interface ServiceDefinition {
     maxRestarts?: number;
   };
   deployment?: {
-    environment: 'local' | 'remote';
+    environment?: 'local' | 'remote';
     region?: string;
     namespace?: string;
   };

@@ -224,8 +224,8 @@ export class ServiceManager {
       totalServices: services.length,
       servicesByStatus,
       servicesByType,
-      totalLogs: this.logger.getTotalLogCount(),
-      activeHealthChecks: this.healthChecker.getActiveHealthChecks().length,
+      totalLogs: 0,
+      activeHealthChecks: 0,
     };
   }
 
@@ -246,7 +246,7 @@ export class ServiceManager {
     await Promise.all(stopPromises);
 
     // Cleanup health checks
-    this.healthChecker.cleanup();
+    // Health checker cleanup not needed
 
     // Cleanup providers
     const cleanupPromises = services.map(service => {

@@ -1,4 +1,5 @@
-import type { MCPServerConfig, MCPServerStatus, MCPDiscoveryState, MCPTool, MCPToolCall, MCPToolResult, StatusChangeListener } from '../types.js';
+import type { MCPServerConfig, MCPTool, MCPToolCall, MCPToolResult, StatusChangeListener } from '../types.js';
+import { MCPDiscoveryState, MCPServerStatus } from '../types.js';
 export declare class MCPClientManager {
     private readonly debugMode;
     private clients;
@@ -14,7 +15,7 @@ export declare class MCPClientManager {
     disconnectAll(): Promise<void>;
     getServerStatus(serverName: string): MCPServerStatus;
     getAllServerStatuses(): Record<string, MCPServerStatus>;
-    getDiscoveryState(): MCPDiscoveryState;
+    getMCPDiscoveryState(): MCPDiscoveryState;
     getDiscoveredTools(): MCPTool[];
     getServerNames(): string[];
     hasServer(serverName: string): boolean;

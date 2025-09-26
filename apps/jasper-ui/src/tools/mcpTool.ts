@@ -1,5 +1,5 @@
 import { Tool } from '../types/index.js';
-import type { MCPClientManager, MCPTool, MCPToolCall } from '../../../../packages/mcp-client-lib/src/index.js';
+import type { MCPClientManager, MCPTool, MCPToolCall } from '../../../../packages/mcp-client-lib/dist/index.js';
 
 export class MCPToolWrapper implements Tool {
   public readonly name: string;

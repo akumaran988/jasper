@@ -1,18 +1,16 @@
 import type {
   MCPServerConfig,
-  MCPServerStatus,
-  MCPDiscoveryState,
   MCPTool,
   MCPToolCall,
   MCPToolResult,
   StatusChangeListener
 } from '../types.js';
-import { MCPDiscoveryState as DiscoveryState, MCPServerStatus } from '../types.js';
+import { MCPDiscoveryState, MCPServerStatus } from '../types.js';
 import { MCPClient } from './mcpClient.js';
 
 export class MCPClientManager {
   private clients: Map<string, MCPClient> = new Map();
-  private discoveryState: MCPDiscoveryState = DiscoveryState.NOT_STARTED;
+  private discoveryState: MCPDiscoveryState = MCPDiscoveryState.NOT_STARTED;
   private statusListeners: StatusChangeListener[] = [];
   private allDiscoveredTools: MCPTool[] = [];
 
@@ -49,7 +47,7 @@ export class MCPClientManager {
   }
 
   async connectAll(): Promise<void> {
-    this.discoveryState = DiscoveryState.IN_PROGRESS;
+    this.discoveryState = MCPDiscoveryState.IN_PROGRESS;
     
     const connectionPromises = Array.from(this.clients.values()).map(
       async (client) => {
@@ -65,7 +63,7 @@ export class MCPClientManager {
   }
 
   async discoverAllTools(): Promise<MCPTool[]> {
-    this.discoveryState = DiscoveryState.IN_PROGRESS;
+    this.discoveryState = MCPDiscoveryState.IN_PROGRESS;
     
     const discoveryPromises = Array.from(this.clients.values()).map(
       async (client) => {
@@ -82,7 +80,7 @@ export class MCPClientManager {
     const toolArrays = await Promise.all(discoveryPromises);
     this.allDiscoveredTools = toolArrays.flat();
     
-    this.discoveryState = DiscoveryState.COMPLETED;
+    this.discoveryState = MCPDiscoveryState.COMPLETED;
     return this.allDiscoveredTools;
   }
 
@@ -142,7 +140,7 @@ export class MCPClientManager {
     return statuses;
   }
 
-  getDiscoveryState(): MCPDiscoveryState {
+  getMCPDiscoveryState(): MCPDiscoveryState {
     return this.discoveryState;
   }
 

@@ -197,7 +197,7 @@ export class ServiceManager {
       service.pid = undefined;
 
       // Auto-restart if configured
-      if (service.config.autoRestart && service.status !== 'stopping') {
+      if (service.config.autoRestart && service.status === 'stopped') {
         this.handleAutoRestart(service);
       }
     });
@@ -362,7 +362,7 @@ export class ServiceManager {
           service.containerId = undefined;
 
           // Auto-restart if configured
-          if (service.config.autoRestart && service.status !== 'stopping') {
+          if (service.config.autoRestart && service.status === 'stopped') {
             this.handleAutoRestart(service);
           }
         }

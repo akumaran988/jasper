@@ -1004,22 +1004,25 @@ const StructuredToolResultRenderer: React.FC<{
   const shouldCollapseContent = (content: string) => {
     // Check if we have a display handler for this tool
     try {
+      const toolNameForContext = toolResult.id.includes('_') ?
+        toolResult.id.substring(0, toolResult.id.lastIndexOf('_')) :
+        'unknown';
       const context: DisplayContext = {
-        toolName: toolName,
-        operation: toolResult.parameters?.operation,
-        parameters: toolResult.parameters || {},
+        toolName: toolNameForContext,
+        operation: undefined,
+        parameters: {},
         result: toolResult,
         isExpanded: false,
         isFocused: false
       };
 
       // Use display registry to determine collapse behavior
-      if (displayRegistry.hasHandler(toolName)) {
+      if (displayRegistry.hasHandler(toolNameForContext)) {
         return displayRegistry.shouldCollapse(context);
       }
     } catch (error) {
       // Fallback to default behavior on error
-      console.warn('Error checking shouldCollapse for tool:', toolName, error);
+      console.warn('Error checking shouldCollapse for tool:', 'unknown', error);
     }
 
     return true; // Always collapse tool results by default for unknown tools
@@ -1036,8 +1039,8 @@ const StructuredToolResultRenderer: React.FC<{
       try {
         const context: DisplayContext = {
           toolName: toolName,
-          operation: toolResult.parameters?.operation,
-          parameters: toolResult.parameters || {},
+          operation: undefined,
+          parameters: {},
           result: toolResult,
           isExpanded: isExpanded,
           isFocused: isFocused

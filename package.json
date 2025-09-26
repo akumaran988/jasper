@@ -1,0 +1,50 @@
+{
+  "name": "jasper-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jasper AI Assistant - Workspace Root",
+  "scripts": {
+    "setup": "node setup.js",
+    "setup:windows": "setup.bat",
+    "setup:unix": "./setup.sh",
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspace=jasper",
+    "start": "npm run start --workspace=jasper",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "clean": "node -e \"const fs=require('fs'),path=require('path'); function safeDelete(p){try{if(fs.existsSync(p)){console.log('Cleaning:',p); fs.rmSync(p,{recursive:true,force:true,maxRetries:3,retryDelay:100})}}catch(e){console.warn('Could not clean:',p,e.message)}} ['apps','packages'].forEach(dir=>{try{fs.readdirSync(dir).forEach(pkg=>{['dist','node_modules'].forEach(d=>safeDelete(path.join(dir,pkg,d)))})}catch(e){}}); safeDelete('node_modules'); safeDelete('builtin-servers')\"",
+    "clean:windows": "node -e \"const fs=require('fs'),path=require('path'),{spawn}=require('child_process'); function cleanWindows(p){if(fs.existsSync(p)){console.log('Cleaning:',p); try{const result=spawn('rd',['/s','/q',p.replace(/\\//g,'\\\\')],{shell:true,stdio:'pipe'}); result.on('close',()=>{})}catch(e){try{fs.rmSync(p,{recursive:true,force:true})}catch(e2){console.warn('Could not clean:',p)}}}} ['apps','packages'].forEach(dir=>{try{fs.readdirSync(dir).forEach(pkg=>{['dist','node_modules'].forEach(d=>cleanWindows(path.join(dir,pkg,d)))})}catch(e){}}); cleanWindows('node_modules')\"",
+    "install:all": "npm install && npm install --workspaces --if-present",
+    "jasper:basic": "npm run start:basic --workspace=jasper",
+    "jasper:builtin": "npm run start:builtin --workspace=jasper",
+    "jasper:mixed": "npm run start:mixed --workspace=jasper",
+    "jasper:production": "npm run start:production --workspace=jasper",
+    "jasper:local-stack": "npm run start:local-stack --workspace=jasper",
+    "jasper:with-remotes": "npm run start:mixed --workspace=jasper",
+    "service-manager:local": "npm run start:local --workspace=@jasper/service-manager",
+    "service-manager:remote": "npm run start:remote --workspace=@jasper/service-manager",
+    "service-manager:dev": "npm run dev:local --workspace=@jasper/service-manager",
+    "mcp-server:standalone": "npm run dev --workspace=@jasper/mcp-server -- start --server=service-manager --port=8081",
+    "mcp-server:remote": "npm run dev --workspace=@jasper/mcp-server -- start --server=service-manager --mode=remote --port=8080 --auth=required"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "keywords": [
+    "ai",
+    "assistant",
+    "terminal",
+    "cli",
+    "mcp",
+    "workspace"
+  ],
+  "license": "MIT"
+}

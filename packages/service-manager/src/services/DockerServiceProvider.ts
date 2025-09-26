@@ -1,4 +1,5 @@
 import Docker from 'dockerode';
+import path from 'path';
 import type { IServiceProvider } from '../interfaces/IServiceProvider.js';
 import type { ServiceInstance, ServiceStats } from '../types.js';
 import type { ILogger } from '../interfaces/ILogger.js';
@@ -129,7 +130,7 @@ export class DockerServiceProvider implements IServiceProvider {
       Env: Object.entries(env).map(([key, value]) => `${key}=${value}`),
       HostConfig: {
         PortBindings: {},
-        Binds: Object.entries(volumes).map(([host, container]) => `${host}:${container}`),
+        Binds: Object.entries(volumes).map(([host, container]) => `${this.resolveVolumePath(host)}:${container}`),
         RestartPolicy: { Name: 'no' }, // We handle restarts manually
       },
     };
@@ -277,9 +278,28 @@ export class DockerServiceProvider implements IServiceProvider {
     const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - (stats.precpu_stats.cpu_usage?.total_usage || 0);
     const systemDelta = stats.cpu_stats.system_cpu_usage - (stats.precpu_stats.system_cpu_usage || 0);
     const numberCpus = stats.cpu_stats.online_cpus || 1;
-    
+
     if (systemDelta === 0) return 0;
-    
+
     return Math.round((cpuDelta / systemDelta) * numberCpus * 100 * 100) / 100; // Round to 2 decimal places
+  }
+
+  /**
+   * Resolve volume paths to absolute paths for Docker
+   * Docker requires absolute paths for host directory mounts
+   */
+  private resolveVolumePath(hostPath: string): string {
+    // If it's already absolute, return as-is
+    if (path.isAbsolute(hostPath)) {
+      return hostPath;
+    }
+
+    // If it starts with ./ or ../, resolve to absolute path
+    if (hostPath.startsWith('./') || hostPath.startsWith('../')) {
+      return path.resolve(process.cwd(), hostPath);
+    }
+
+    // For other relative paths, resolve from current working directory
+    return path.resolve(process.cwd(), hostPath);
   }
 }

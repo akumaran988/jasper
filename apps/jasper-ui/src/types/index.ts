@@ -114,7 +114,7 @@ export interface ServiceDefinition {
     maxRestarts?: number;
   };
   deployment?: {
-    environment?: string;
+    environment?: 'local' | 'remote';
     region?: string;
     namespace?: string;
   };
@@ -135,7 +135,7 @@ export interface JasperConfig {
   model?: string;
   apiThrottleMs?: number;
   tokenLimit?: number; // Default: 10000
-  mcpServers?: Record<string, MCPServerConfig>;
+  mcpServers?: Record<string, any>;
   serviceDefinitions?: Record<string, ServiceDefinition>;
   deploymentProfiles?: Record<string, DeploymentProfile>;
 }

@@ -11,7 +11,7 @@ export const mcpServerCommands: SlashCommand[] = [
   {
     name: '/mcp-install',
     description: 'Install an MCP server from npm or git',
-    handler: async (source?: string, name?: string) => {
+    handler: async (source?: string, name?: string, serverName?: string) => {
       if (!source) {
         console.log('❌ Please specify a package to install');
         console.log('Usage:');
@@ -41,7 +41,7 @@ export const mcpServerCommands: SlashCommand[] = [
             return;
           }
           
-          const [gitUrl, serverName] = [name, arguments[2]];
+          const gitUrl = name;
           if (!serverName) {
             console.log('❌ Please specify server name for git installation');
             return;

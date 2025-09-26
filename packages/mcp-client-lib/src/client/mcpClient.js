@@ -23,20 +23,30 @@ export class MCPClient {
         this.isDisconnecting = false;
         this.updateStatus(Status.CONNECTING);
         try {
+            console.log(`[${this.serverName}] Creating transport...`);
             this.transport = await this.createTransport();
+            console.log(`[${this.serverName}] Transport created successfully`);
             this.client.onerror = (error) => {
                 if (this.isDisconnecting) {
                     return;
                 }
                 console.error(`MCP ERROR (${this.serverName}):`, error.toString());
-                this.updateStatus(Status.ERROR);
+                // Don't mark HTTP transport clients as disconnected for individual request failures
+                // HTTP is stateless and a failed request doesn't mean the connection is broken
+                if (!this.serverConfig.httpUrl) {
+                    this.updateStatus(Status.ERROR);
+                }
             };
+            console.log(`[${this.serverName}] Connecting client...`);
             await this.client.connect(this.transport, {
                 timeout: this.serverConfig.timeout ?? MCP_DEFAULT_TIMEOUT_MSEC,
             });
+            console.log(`[${this.serverName}] Client connected successfully`);
             this.updateStatus(Status.CONNECTED);
+            console.log(`[${this.serverName}] Status updated to CONNECTED`);
         }
         catch (error) {
+            console.error(`[${this.serverName}] Connection failed:`, error);
             this.updateStatus(Status.ERROR);
             throw error;
         }
@@ -88,7 +98,9 @@ export class MCPClient {
         }
     }
     async callTool(toolCall) {
+        console.log(`[${this.serverName}] callTool: status=${this.status}, toolName=${toolCall.name}`);
         if (this.status !== Status.CONNECTED) {
+            console.error(`[${this.serverName}] Tool call rejected: status is ${this.status}, expected CONNECTED`);
             throw new Error('Client is not connected.');
         }
         const startTime = Date.now();

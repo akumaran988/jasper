@@ -1,5 +1,5 @@
-import type { MCPClientManager, MCPServerConfig, MCPTool, MCPServerStatus } from '../../../../packages/mcp-client-lib/src/index.js';
-import { MCPClientManager as ClientManager } from '../../../../packages/mcp-client-lib/src/index.js';
+import type { MCPClientManager, MCPServerConfig, MCPTool, MCPServerStatus } from '../../../../packages/mcp-client-lib/dist/index.js';
+import { MCPClientManager as ClientManager } from '../../../../packages/mcp-client-lib/dist/index.js';
 import { globalToolRegistry } from './tools.js';
 import { MCPToolWrapper } from '../tools/mcpTool.js';
 import { MCPServerManager, type MixedMCPServerConfig } from './mcpServerManager.js';

@@ -1,7 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { EventEmitter } from 'events';
-import type { MCPServerConfig } from '../../../../packages/mcp-client-lib/src/index.js';
+import type { MCPServerConfig } from '../../../../packages/mcp-client-lib/dist/index.js';
 import { resolveMCPServerConfig, isBuiltinServer, getBuiltinServerPath } from './builtinMcpServers.js';
 import { mcpServerRegistry } from './mcpServerRegistry.js';
 
@@ -26,7 +26,13 @@ export interface RemoteMCPServerConfig extends MCPServerConfig {
 export interface MixedMCPServerConfig extends MCPServerConfig {
   mode: 'local' | 'remote';
   autoStart?: boolean;
-  serverConfig?: LocalMCPServerConfig['serverConfig'];
+  serverConfig?: {
+    script: string;
+    port?: number;
+    args?: string[];
+    env?: Record<string, string>;
+    cwd?: string;
+  };
   healthCheck?: boolean;
   retryAttempts?: number;
 }
@@ -171,7 +177,7 @@ export class MCPServerManager extends EventEmitter {
 
     // Resolve the script path (built-in, installed, or custom)
     const resolvedConfig = this.resolveServerScript(server.id, server.config);
-    const { script, port, args = [], env = {}, cwd } = resolvedConfig.serverConfig;
+    const { script, port = 8080, args = [], env = {}, cwd } = resolvedConfig.serverConfig!;
     
     console.log(`🚀 Starting local MCP server: ${server.id} on port ${port}`);
     console.log(`📂 Script: ${script}`);

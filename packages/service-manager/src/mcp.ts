@@ -418,7 +418,9 @@ export function createMCPToolHandlers() {
           name: 'redis-cache',
           type: 'docker' as const,
           image: 'redis:7-alpine',
-          ports: { '6379': '6379' }
+          ports: { '6379': '6379' },
+          volumes: { './data/redis': '/data' },
+          args: ['redis-server', '--appendonly', 'yes']
         };
       } else if (lowerServiceName.includes('postgres')) {
         serviceConfig = {
@@ -531,6 +533,8 @@ export function createMCPToolHandlers() {
                 type: 'docker' as const,
                 image: 'redis:7-alpine',
                 ports: { '6379': '6379' },
+                volumes: { './data/redis': '/data' },
+                args: ['redis-server', '--appendonly', 'yes'],
                 env: {}
               };
             } else if (lowerServiceName.includes('postgres')) {

@@ -3,7 +3,7 @@
  * Uses the unified service manager directly (no MCP overhead)
  */
 
-import { createServiceManager, type ServiceConfig, type ServiceInstance as ServiceManagerInstance } from '@jasper/service-manager';
+import { createServiceManager, type ServiceConfig, type ServiceInstance as ServiceManagerInstance } from '../../../../packages/service-manager/dist/index.js';
 import { EventEmitter } from 'events';
 
 export interface JasperServiceDefinition {
