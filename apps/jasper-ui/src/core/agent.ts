@@ -524,6 +524,7 @@ IMPORTANT: Create todos at the START of complex tasks, not at the end. This help
               // Add a denial result for this specific tool
               this.addToolResults([{
                 id: `${toolCall.name}_permission_denied_${Date.now()}`,
+                toolName: toolCall.name,
                 success: false,
                 error: 'User denied permission to execute this tool',
                 result: null

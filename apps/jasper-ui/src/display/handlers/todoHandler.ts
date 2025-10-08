@@ -97,22 +97,21 @@ export class TodoDisplayHandler implements ToolDisplayHandler {
 
   private formatUpdateTodoStatus(context: DisplayContext): DisplayResult {
     const result = context.result.result || context.result;
-    const { todo } = result || {};
-    if (!todo) {
-      return { content: 'Todo status updated successfully' };
+    const { todos = [] } = result || {};
+
+    if (todos.length === 0) {
+      return { content: '📋 No todos found' };
     }
 
-    const statusIcon = this.getStatusIcon(todo.status);
-    let content = `${statusIcon} Updated todo: ${todo.title}\n`;
-    content += `   Status: ${this.formatStatus(todo.status)}`;
+    let content = '';
 
-    if (todo.status === 'completed' && todo.completedAt) {
-      const completedTime = new Date(todo.completedAt).toLocaleTimeString();
-      content += ` (completed at ${completedTime})`;
-    }
+    todos.forEach((todo: any) => {
+      const line = this.formatDetailedTodoLine(todo);
+      content += `${line}\n`;
+    });
 
     return {
-      content,
+      content: content.trim(),
       shouldCollapse: false
     };
   }
@@ -128,35 +127,12 @@ export class TodoDisplayHandler implements ToolDisplayHandler {
       };
     }
 
-    let content = `📋 Todo List (${todos.length} ${todos.length === 1 ? 'item' : 'items'})\n\n`;
+    let content = '';
 
-    // Group by status
-    const pending = todos.filter((t: any) => t.status === 'pending');
-    const inProgress = todos.filter((t: any) => t.status === 'in_progress');
-    const completed = todos.filter((t: any) => t.status === 'completed');
-
-    if (inProgress.length > 0) {
-      content += '⏳ IN PROGRESS:\n';
-      inProgress.forEach((todo: any) => {
-        content += this.formatTodoLine(todo) + '\n';
-      });
-      content += '\n';
-    }
-
-    if (pending.length > 0) {
-      content += '⏸️  PENDING:\n';
-      pending.forEach((todo: any) => {
-        content += this.formatTodoLine(todo) + '\n';
-      });
-      content += '\n';
-    }
-
-    if (completed.length > 0) {
-      content += '✅ COMPLETED:\n';
-      completed.forEach((todo: any) => {
-        content += this.formatTodoLine(todo) + '\n';
-      });
-    }
+    todos.forEach((todo: any) => {
+      const line = this.formatDetailedTodoLine(todo);
+      content += `${line}\n`;
+    });
 
     return {
       content: content.trim(),
@@ -301,6 +277,34 @@ export class TodoDisplayHandler implements ToolDisplayHandler {
     return line;
   }
 
+  private formatDetailedTodoLine(todo: any): string {
+    let line = '';
+    let statusIcon = '';
+    let titleFormat = '';
+
+    // Determine status icon and formatting
+    switch (todo.status) {
+      case 'completed':
+        statusIcon = '✅';
+        titleFormat = `~~${todo.content || todo.title}~~`;
+        break;
+      case 'in_progress':
+        statusIcon = '🟡';
+        titleFormat = todo.content || todo.title;
+        break;
+      case 'pending':
+      default:
+        statusIcon = '❌';
+        titleFormat = todo.content || todo.title;
+        break;
+    }
+
+    // Format the line with proper indentation and status
+    line = `${statusIcon} ${titleFormat}`;
+
+    return line;
+  }
+
   private getStatusIcon(status: string): string {
     switch (status) {
       case 'pending': return '⏸️ ';
@@ -355,7 +359,7 @@ export class TodoDisplayHandler implements ToolDisplayHandler {
     }
   }
 
-  shouldCollapse(context: DisplayContext): boolean {
+  shouldCollapse(_context: DisplayContext): boolean {
     // User specifically requested not to collapse todos
     return false;
   }

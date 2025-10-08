@@ -30,6 +30,8 @@ export interface ToolCall {
 
 export interface ToolResult {
   id: string;
+  toolName?: string; // Add optional tool name field
+  parameters?: Record<string, any>; // Store original tool call parameters
   success: boolean;
   result: any;
   error?: string;

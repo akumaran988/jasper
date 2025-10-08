@@ -25,6 +25,7 @@ export class ToolRegistry {
     if (!tool) {
       return {
         id: toolCall.id,
+        toolName: toolCall.name,
         success: false,
         result: null,
         error: `Tool '${toolCall.name}' not found`,
@@ -40,6 +41,7 @@ export class ToolRegistry {
       
       return {
         id: toolCall.id,
+        toolName: toolCall.name,
         success: true,
         result,
         executionTime
@@ -50,6 +52,7 @@ export class ToolRegistry {
       
       return {
         id: toolCall.id,
+        toolName: toolCall.name,
         success: false,
         result: null,
         error: error instanceof Error ? error.message : String(error),

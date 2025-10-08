@@ -31,6 +31,9 @@ const getToolPermissionMessage = (toolName: string, params: any, result: any): s
         return `Command '${command.split(' ')[0]}' approved for folder ${workingDir}`;
       }
       break;
+    case 'todo_ops':
+      // No permission message for todo operations as requested
+      return null;
     // Add more tools as needed
     default:
       return null;
@@ -197,16 +200,19 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
         // Format parameters to show all parameters
         let paramDisplay = '';
         const params = call.parameters || {};
-        
-        // Always show all parameters
-        paramDisplay = Object.entries(params)
-          .map(([k, v]) => {
-            if (typeof v === 'string' && v.length > 50) {
-              return `${k}="${v.substring(0, 47)}..."`;
-            }
-            return `${k}=${JSON.stringify(v)}`;
-          })
-          .join(', ');
+
+        // Hide parameters for todo_ops tool as requested
+        if (call.name !== 'todo_ops') {
+          // Always show all parameters for non-todo tools
+          paramDisplay = Object.entries(params)
+            .map(([k, v]) => {
+              if (typeof v === 'string' && v.length > 50) {
+                return `${k}="${v.substring(0, 47)}..."`;
+              }
+              return `${k}=${JSON.stringify(v)}`;
+            })
+            .join(', ');
+        }
         
         // Tool results will be displayed separately when they appear as system messages
         // No need to search for them here since they don't exist yet when tool call is displayed
@@ -220,7 +226,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
         renderParts.push(
           <Box key={`tool-${toolIndex}`} flexDirection="column">
             <Text>
-              <Text color="blue">⏺</Text> <Text bold color="white">{displayName}</Text>({paramDisplay})
+              <Text color="blue">⏺</Text> <Text bold color="white">{displayName}</Text>{paramDisplay ? `(${paramDisplay})` : ''}
             </Text>
           </Box>
         );
@@ -1000,15 +1006,18 @@ const StructuredToolResultRenderer: React.FC<{
   onToggle?: () => void;
 }> = ({ toolResult, isExpanded = false, isFocused = false, onToggle }) => {
   
+  // Get the tool name from the result (preferred) or fallback to ID parsing
+  const toolName = toolResult.toolName ||
+    (toolResult.id.includes('_') ?
+      toolResult.id.substring(0, toolResult.id.lastIndexOf('_')) :
+      globalToolRegistry.getAll().find(t => t.name)?.name || 'unknown');
+
   // Helper function to check if content should be collapsed
   const shouldCollapseContent = (content: string) => {
     // Check if we have a display handler for this tool
     try {
-      const toolNameForContext = toolResult.id.includes('_') ?
-        toolResult.id.substring(0, toolResult.id.lastIndexOf('_')) :
-        'unknown';
       const context: DisplayContext = {
-        toolName: toolNameForContext,
+        toolName: toolName, // Use the same toolName variable
         operation: undefined,
         parameters: {},
         result: toolResult,
@@ -1017,24 +1026,21 @@ const StructuredToolResultRenderer: React.FC<{
       };
 
       // Use display registry to determine collapse behavior
-      if (displayRegistry.hasHandler(toolNameForContext)) {
-        return displayRegistry.shouldCollapse(context);
+      if (displayRegistry.hasHandler(toolName)) {
+        const shouldCollapse = displayRegistry.shouldCollapse(context);
+        // For debug: console.log(`Tool ${toolName} shouldCollapse:`, shouldCollapse);
+        return shouldCollapse;
       }
     } catch (error) {
       // Fallback to default behavior on error
-      console.warn('Error checking shouldCollapse for tool:', 'unknown', error);
+      console.warn('Error checking shouldCollapse for tool:', toolName, error);
     }
 
     return true; // Always collapse tool results by default for unknown tools
   };
 
-  // Get the tool name from the result ID or tool registry
-  const toolName = toolResult.id.includes('_') ?
-    toolResult.id.substring(0, toolResult.id.lastIndexOf('_')) :
-    globalToolRegistry.getAll().find(t => t.name)?.name || 'unknown';
-
   if (toolResult.success) {
-    // Check if we have a display handler for this tool
+    // Check if we have a display handler for this tool first
     if (displayRegistry.hasHandler(toolName)) {
       try {
         const context: DisplayContext = {
@@ -1047,17 +1053,34 @@ const StructuredToolResultRenderer: React.FC<{
         };
 
         const displayResult = displayRegistry.formatToolResult(context);
+        const shouldCollapse = displayRegistry.shouldCollapse(context);
 
-        // Use display handler's formatted content
-        return (
-          <Box flexDirection="column" marginLeft={2}>
-            {displayResult.content.split('\n').map((line: string, lineIndex: number) => (
-              <Box key={lineIndex}>
-                <Text>{line}</Text>
+        // For tools with display handlers, respect their shouldCollapse setting
+        if (!shouldCollapse || isExpanded) {
+          // Use display handler's formatted content (not collapsed)
+          return (
+            <Box flexDirection="column" marginLeft={2}>
+              {displayResult.content.split('\n').map((line: string, lineIndex: number) => (
+                <Box key={lineIndex}>
+                  <Text>{line}</Text>
+                </Box>
+              ))}
+            </Box>
+          );
+        } else {
+          // Use display handler's summary for collapsed view
+          const summary = displayRegistry.getSummary(context);
+          return (
+            <Box flexDirection="column">
+              <Box>
+                <Text>
+                  <Text color="gray">  ⎿  </Text>
+                  <Text color="gray">{summary}</Text>
+                </Text>
               </Box>
-            ))}
-          </Box>
-        );
+            </Box>
+          );
+        }
       } catch (error) {
         console.warn('Error using display handler for tool:', toolName, error);
         // Fall through to default handling
@@ -1102,18 +1125,18 @@ const StructuredToolResultRenderer: React.FC<{
     }
 
     if (!content) return null;
-    
+
     const shouldCollapse = shouldCollapseContent(content);
-    
+
     // When collapsed, show specific format based on operation type
     if (shouldCollapse && !isExpanded) {
       // Extract operation info for better display (only for successful operations)
       const isReadOperation = toolResult.result?.content || (typeof toolResult.result === 'string');
       const isFileOperation = toolResult.result?.operation === 'create' || toolResult.result?.operation === 'write' || toolResult.result?.operation === 'delete';
-      
+
       // Extract execution time for display
       const timingText = toolResult.executionTime ? ` (${toolResult.executionTime} ms)` : '';
-      
+
       let summaryText = '';
       if (isReadOperation) {
         // For read operations, show line count
@@ -1131,7 +1154,7 @@ const StructuredToolResultRenderer: React.FC<{
         // Default format
         summaryText = `Found ${content.split('\n').length} lines${timingText}`;
       }
-      
+
       return (
         <Box flexDirection="column">
           <Box>
